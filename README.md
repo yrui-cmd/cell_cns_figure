@@ -1,12 +1,22 @@
 # Cell_CNS_Figure
 
-小描期刊图 API 客户端与两阶段科研绘图 Skill：先获得布局图 A，再由用户选择是否生成高级设计图 B。每阶段分别展示费用与实时余额，提交后按阶段间隔（A 每 3 分钟、B 每 10 分钟）自动检查。
+把文章摘要或核心研究文字，变成可以直接查看和继续编辑的科研期刊图。
 
-**提交并设置定时检查后，当前回复先结束；按阶段间隔（A 每 3 分钟、B 每 10 分钟）醒来查看，有图就下载交付，无新结果则保持安静。** 图片交付才算生成完成，不需要用户再次发送“继续”。成功交付、用户停止、服务明确失败或需要用户处理的问题会停止自动检查。
+`Cell_CNS_Figure` 采用两阶段流程：第一阶段把研究文字转成布局图 A；第二阶段在用户明确选择后，以图 A 和原研究文字生成高级设计图 B，并领取可编辑 PPTX。每个阶段都先展示实时余额和本次费用，再由用户决定是否提交。
+
+提交后系统保存原任务并定时检查：图 A 每 3 分钟一次，图 B 每 10 分钟一次。没有新结果时保持安静；图片下载并验证成功才算完成，用户不需要反复发送“继续”。
 
 显示名称为 `Cell_CNS_Figure`，Codex 调用标识为 `$cell-cns-figure`。
 
-An MIT-licensed Python client and Codex skill for Xiaomiao scientific figures: submit research text and optional references, check credits, and schedule checks every 3 minutes for stage A and every 10 minutes for stage B until the final PNG is retrieved and delivered. Each check ends instead of keeping the conversation running. The remote generation service is separate from this open-source client.
+本仓库开源的是 API 客户端、状态恢复、结果校验和 Codex 工作流；远程生成服务与额度由服务提供方独立维护。
+
+## 一次流程会得到什么
+
+- 图 A：根据研究文字设计的科研图布局；
+- 图 B：基于图 A 继续生成的高级设计图，可由用户选择是否制作；
+- 高级阶段返回的可编辑 PPTX；
+- 每阶段的任务记录、真实状态和最新余额；
+- 中断后继续原任务的能力，避免重复提交和重复扣费。
 
 ## 目录
 
@@ -21,8 +31,9 @@ An MIT-licensed Python client and Codex skill for Xiaomiao scientific figures: s
 
 ## 功能
 
-- 仅接收文章摘要或核心研究文字；第一阶段生成图 A，第二阶段使用图 A 作为参考，提交前显示实时额度。
-- 保存任务 ID，按阶段间隔（A 每 3 分钟、B 每 10 分钟）定时检查并领取图片；中断后恢复同一任务，复用已经下载的结果。
+- 只接收文章摘要或核心研究文字，不擅自把其他材料改写成研究结论。
+- 第一阶段生成图 A；第二阶段使用原文字和图 A 生成高级图 B。两个阶段分别确认费用，第一阶段授权不能代替第二阶段授权。
+- 保存任务 ID，按阶段间隔自动检查并领取结果；中断后恢复同一任务，复用已经下载的文件。
 - 验证返回 PNG 的文件签名、完整解码及尺寸；高级图 B 还会领取并验证可编辑 PPTX，下载后再次查询余额。
 - 提供可独立使用的命令行客户端、Codex Skill 和[接口说明](references/api-contract.md)。
 
