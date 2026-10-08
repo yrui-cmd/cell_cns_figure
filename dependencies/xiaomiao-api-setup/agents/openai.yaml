@@ -1,6 +1,0 @@
-interface:
-  display_name: "小描 API 配置"
-  short_description: "配置聊天或文件密钥，每次实时查询余额并展示三项小描图片接口"
-  default_prompt: "使用 $xiaomiao-api-setup 配置我的小描密钥，查询实时余额并展示可用功能。"
-policy:
-  allow_implicit_invocation: true

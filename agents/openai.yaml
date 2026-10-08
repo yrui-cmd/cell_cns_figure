@@ -1,6 +1,4 @@
 interface:
-  display_name: "Cell_CNS_Figure"
-  short_description: "两阶段科研绘图，逐阶段展示费用和余额，布局每三分钟、高级每十分钟检查"
-  default_prompt: "使用 $cell-cns-figure 完成布局图 A 到高级设计图 B 的流程，分别确认第一阶段 10 次与第二阶段 45 次额度，读取共享配置，第一阶段每3分钟、第二阶段每10分钟检查返回结果。"
-policy:
-  allow_implicit_invocation: true
+  display_name: "cell_cns_figure"
+  short_description: "科研绘图统一入口：日常选1，20额度；高嵌套文件选2，45额度，更注重美观"
+  default_prompt: "使用 $cell_cns_figure 处理这份文字或图片，先让我选择1号或2号。"
