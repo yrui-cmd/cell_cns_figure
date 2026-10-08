@@ -18,7 +18,7 @@
 使用本机已安装的 Python（例如命令 `python`）。调用与恢复命令见[客户端运行](references/client.md)。
 
 1. 显示“正在第1步。”，保存原图；可选文字写UTF-8文件。给任务选择独立目录，记录当前真实`CODEX_THREAD_ID`，禁止猜聊天ID、另建聊天或发到姐妹聊天。
-2. 核对选择与20额度授权，运行`client.py probe`确认桌面原聊天可达。读取客户凭据并用`balance`查看实时余额。凭据缺失时只问“请提供小描 API Key。”；用户可在聊天提供，通过stdin交给`configure-key`，不复述或写到命令行。凭据只存当前Windows用户DPAPI密文；本机已有客户凭据可直接使用，不替换账号。
+2. 核对选择与20额度授权，运行`client.py probe`确认桌面原聊天可达。先执行`discover-key`本地检测已有 API Key，再用`balance`查看实时余额。已有配置直接复用，只有明确未找到时才问“请提供小描 API Key。”；用户可在聊天提供，通过stdin交给`configure-key`，不复述或写到命令行。凭据只存当前Windows用户DPAPI密文；本机已有客户凭据可直接使用，不替换账号。
 3. 显示“正在第2步。”，执行`submit --image ... --application ppt|ai --job-dir ... --credits-approved 20 --authorize-wake`，文字仅在有内容时加`--text-file`。调用者传入当前真实thread-id。启用本Skill处理该任务包含用户要求的“结果返回后通知原聊天继续处理”授权；不得扩大到别的聊天。
 4. 脚本持久化原图与请求ID，注册登录/崩溃恢复，提交后自动启动独立Python等待进程。确认返回`charged_credits=20`且`background_waiter_verified=true`；仅回复“正在第3步。”并结束本轮。
 5. 响应丢失只恢复原目录、原请求ID；不能换目录重新提交、重复付费。接收进程在后台检查原任务，收到SVG后下载、校验并保留，再通过桌面工具通知原聊天。原聊天正忙则等待空闲。

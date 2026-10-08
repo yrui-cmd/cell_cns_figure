@@ -26,7 +26,7 @@ from pathlib import Path
 if __name__ == '__main__':
     sys.modules['client'] = sys.modules[__name__]
 
-from credentials import read_token, save_token
+from credentials import CredentialError, read_token, resolve_credential, save_token
 
 SKILL = Path(__file__).resolve().parents[1]
 ORIGIN = 'https://xiaomiao-ai.com'
@@ -525,14 +525,14 @@ def public(state):
 def main():
     p = argparse.ArgumentParser()
     commands = p.add_subparsers(dest='command',required=True)
-    for name in ('balance','configure-key'):
-        q=commands.add_parser(name);q.add_argument('--credential-file',type=Path,default=DEFAULT_KEY)
+    for name in ('balance','configure-key','discover-key'):
+        q=commands.add_parser(name);q.add_argument('--credential-file',type=Path)
     q=commands.add_parser('submit')
     q.add_argument('--image',type=Path)
     q.add_argument('--text-file',type=Path)
     q.add_argument('--application',choices=('ppt','ai'),required=True)
     q.add_argument('--thread-id',default=os.environ.get('CODEX_THREAD_ID'))
-    q.add_argument('--credential-file',type=Path,default=DEFAULT_KEY)
+    q.add_argument('--credential-file',type=Path)
     q.add_argument('--credits-approved',type=int,required=True)
     q.add_argument('--authorize-wake',action='store_true',required=True)
     q.add_argument('--job-dir',type=Path,required=True)
@@ -547,11 +547,16 @@ def main():
     args=p.parse_args()
     try:
         if args.command=='configure-key':
+            args.credential_file=args.credential_file or DEFAULT_KEY
             token=sys.stdin.readline().strip()
-            if not token.startswith('img_live_'):raise ClientError('Expected customer login key')
+            if not token.startswith('img_live_'):raise ClientError('Expected Xiaomiao customer API Key')
             save_token(args.credential_file,token)
             result={'configured':True,'credential_file':str(args.credential_file)}
+        elif args.command=='discover-key':
+            path=resolve_credential(DEFAULT_KEY,args.credential_file)
+            result={'available':True,'credential_file':str(path),'local_only':True}
         elif args.command=='balance':
+            args.credential_file=resolve_credential(DEFAULT_KEY,args.credential_file)
             m=API(args.credential_file).me();result={k:m[k] for k in ('credits_available','credits_per_task')}
         elif args.command=='submit':
             # Register crash/login recovery before incurring a charge.
@@ -559,6 +564,11 @@ def main():
             text=args.text_file.read_text(encoding='utf-8-sig') if args.text_file else ''
             if not args.image and not text.strip():
                 raise ClientError('请提供文字、图片或两者；空输入不提交、不扣费')
+            # Existing jobs retain the pinned credential; do not rediscover an account.
+            if (args.job_dir/'job.json').exists():
+                args.credential_file=Path(read(args.job_dir/'job.json')['credential_file'])
+            else:
+                args.credential_file=resolve_credential(DEFAULT_KEY,args.credential_file)
             install_recovery()
             state=prepare(args.job_dir,image=args.image,text=text,
                 application=args.application,thread_id=args.thread_id,credential_file=args.credential_file,
@@ -598,7 +608,7 @@ def main():
         return 0
     except Exception as e:
         # Do not expose API bodies, credentials, prompts or customer text in logs.
-        print(json.dumps({'ok':False,'error':str(e) if isinstance(e,(ClientError,ApiError)) else type(e).__name__},ensure_ascii=False))
+        print(json.dumps({'ok':False,'error':str(e) if isinstance(e,(ClientError,ApiError,CredentialError)) else type(e).__name__},ensure_ascii=False))
         return 1
 
 

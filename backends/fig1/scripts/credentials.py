@@ -1,6 +1,7 @@
 """Windows user-bound DPAPI credentials, compatible with SecureString files."""
 import ctypes
 import os
+import re
 from ctypes import wintypes
 from pathlib import Path
 
@@ -31,8 +32,65 @@ def transform(data, protect):
         kernel.LocalFree(target.data)
 
 
+class CredentialError(RuntimeError):
+    pass
+
+
 def read_token(path):
-    return transform(bytes.fromhex(Path(path).read_text(encoding='utf-8-sig').strip()), False).decode('utf-16-le').rstrip('\0').strip()
+    path = Path(path)
+    try:
+        if path.is_symlink() or path.stat().st_size > 65536:
+            raise ValueError()
+        raw = path.read_text(encoding='utf-8-sig').strip()
+        if raw.startswith('API_Key'):
+            match = re.fullmatch(r'API_Key\s*=\s*"([^"\s]+)"', raw)
+            if not match:
+                raise ValueError()
+            token = match.group(1)
+        else:
+            token = transform(bytes.fromhex(raw), False).decode('utf-16-le').rstrip('\0').strip()
+        if not re.fullmatch(r'img_live_[A-Za-z0-9_.-]+', token):
+            raise ValueError()
+        return token
+    except Exception:
+        raise CredentialError('已有 API Key 配置无法读取或格式不受支持，请检查该配置；不会自动更换账户') from None
+
+
+def shared_config_path():
+    # Same Windows Known Folder used by xiaomiao-api-setup, including redirected desktops.
+    if os.name == 'nt':
+        buf = ctypes.create_unicode_buffer(32768)
+        if ctypes.windll.shell32.SHGetFolderPathW(None, 0x10, None, 0, buf) != 0:
+            raise CredentialError('无法定位小描共享 API 配置，请明确指定凭据文件')
+        return Path(buf.value) / 'xiaomiao_api.txt'
+    return Path.home() / '.config/xiaomiao/xiaomiao_api.txt'
+
+
+def resolve_credential(default, explicit=None):
+    """Select a fixed known file locally; never scan, disclose keys, or query balances."""
+    if explicit is not None:
+        path = Path(explicit).expanduser()
+        read_token(path)  # Explicit missing/invalid configuration must never fall back.
+        return path.resolve()
+    default = Path(default)
+    if default.exists():
+        read_token(default)
+        return default.resolve()
+    shared = shared_config_path()
+    if shared.exists():
+        read_token(shared)
+        return shared.resolve()
+    candidates = []
+    for name in ('cell-figure-plus-customer.txt', 'figure_pro-customer.txt', 'cell_figure_ds-customer.txt'):
+        path = default.parent / name
+        if path.exists():
+            candidates.append((path, read_token(path)))
+    if not candidates:
+        raise CredentialError('未找到已保存的小描 API Key，请提供小描 API Key。')
+    if len({token for _, token in candidates}) != 1:
+        raise CredentialError('本地有多个不同的 API Key，请指定使用哪个凭据文件。')
+    return candidates[0][0].resolve()
+
 
 
 def save_token(path, token):

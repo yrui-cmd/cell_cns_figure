@@ -8,6 +8,7 @@
 
 ```powershell
 python -X utf8 '<SKILL>/scripts/client.py' probe
+python -X utf8 '<SKILL>/scripts/client.py' discover-key
 python -X utf8 '<SKILL>/scripts/client.py' balance
 python -X utf8 '<SKILL>/scripts/client.py' submit --image '<原图.png>' --text-file '<可选文字.txt>' --application ppt --thread-id '<当前CODEX_THREAD_ID>' --job-dir '<独立任务目录>' --credits-approved 45 --authorize-wake
 python -X utf8 '<SKILL>/scripts/client.py' status --job-dir '<原任务目录>'
@@ -47,3 +48,11 @@ python -X utf8 '<SKILL>/scripts/client.py' stop --job-dir '<原任务目录>'
 在原聊天查明并解决凭据失效、网络、余额或等待超时后，执行`resume --job-dir`。程序保留原订单、请求ID、客户身份和输入哈希，重开本地等待时间窗；没有订单ID时也仅恢复原请求，不生成新的收费身份。已发送异常通知的恢复任务使用新回执nonce，避免旧的确认文件把新等待立即结束。
 
 若返回`next_action=convert_existing_svg`，直接继续原目录`convert`，不重新收发；`already_delivered`直接交付已有文件。`inspect_original_chat_and_acknowledge`表示上一条唤醒是否送达尚不明确，先在原聊天核对并执行正确nonce的acknowledge，不重复发送通知。单纯resume不会启动另一个聊天。
+
+## 已有 API Key 检测
+
+询问用户前先运行 `discover-key`，只返回是否可用及凭据文件路径，不输出密钥、不联网、不扣费。优先级：显式 `--credential-file` → 当前分支原有密文 → Windows 实际桌面的 `xiaomiao_api.txt` 共享配置 → 其他已知客户分支凭据（仅唯一密钥时复用）。不扫描其他目录或后台密钥。
+
+共享配置格式沿用小描配置工具的 `API_Key="..."`。不复制明文、不覆盖已有配置；显式文件或优先配置损坏时报告错误，不悄悄换账户。发现多个不同备选密钥时只问使用哪个文件，不要求重新发送密钥。
+
+`balance` 和新 `submit` 自动使用同一检测规则。已有订单保持任务中记录的凭据路径与账户身份，恢复时不重新发现或切换账号。本地可读取不代表远端仍有效，正常提交前仍使用原有余额与身份校验；鉴权失败或网络故障不当作配置不存在。
