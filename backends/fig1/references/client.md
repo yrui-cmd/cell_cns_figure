@@ -34,7 +34,7 @@ python -X utf8 '<SKILL>/scripts/client.py' stop --job-dir '<原任务目录>'
 
 ## 唤醒与恢复
 
-唤醒只发送到提交时记录并获授权的原聊天。Python使用已有桌面app-tools管道；发送前读取该聊天状态，忙时等下一轮。只发送任务路径和内部回执，不发送登录号或科研正文。
+唤醒只发送到提交时记录并获授权的原聊天。Python使用已有桌面app-tools管道；发送前读取该聊天状态，忙时等下一轮。只发送任务路径和内部回执，不发送API Key或科研正文。
 
 发送前持久化wake_sending，明确接收后wake_sent。超时/断线表示可能已送达，记wake_uncertain，不重复发送。原聊天首步用nonce写wake-received.json，即可恢复不明确的发送状态。不要把独立CLI队列或新聊天当作原聊天唤醒。
 

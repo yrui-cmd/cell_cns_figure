@@ -47,7 +47,7 @@ skills/
 
 > 用 cell_cns_figure 的2号处理以下科研文字，输出 Adobe Illustrator 文件。
 
-图片上限为10 MiB；2号文字上限为500000字符。PDF 需先按指定页转成 PNG/JPG。首次使用需要有效的小描客户登录号及足够额度，凭据通过标准输入写入当前 Windows 用户的 DPAPI 密文文件。
+图片上限为10 MiB；2号文字上限为500000字符。PDF 需先按指定页转成 PNG/JPG。首次使用需要有效的小描 API Key及足够额度，凭据通过标准输入写入当前 Windows 用户的 DPAPI 密文文件。
 
 ## 运行与恢复
 

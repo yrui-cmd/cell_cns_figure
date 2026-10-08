@@ -17,7 +17,7 @@ python -X utf8 '<SKILL>/scripts/client.py' stop --job-dir '<原任务目录>'
 
 没有文字就省略--text-file，没有图片就省略--image；不要填占位内容。默认凭据为当前用户`LocalAppData/Xiaomiao/figure_pro-customer.txt`，DPAPI密文。需要为另一个客户配置时用明确的凭据文件，不覆盖其他账户。`configure-key`从stdin读取一行客户密钥，并排他创建密文文件；从不接受命令行明文密钥。
 
-沿用客户已有登录号时，`balance`与`submit`传入同一明确的`--credential-file`。该路径会写入本任务，后续接收只使用它并核对账号身份；不要从多个凭据中猜账户。1号与2号的后台注册表、恢复任务彼此独立，不能混用任务目录。新任务记录service=/api/figure_pro，旧2号记录仍须通过45额度、应用和fgp订单号校验。
+沿用客户已有 API Key时，`balance`与`submit`传入同一明确的`--credential-file`。该路径会写入本任务，后续接收只使用它并核对账号身份；不要从多个凭据中猜账户。1号与2号的后台注册表、恢复任务彼此独立，不能混用任务目录。新任务记录service=/api/figure_pro，旧2号记录仍须通过45额度、应用和fgp订单号校验。
 
 可在用户指定输出位置或当前聊天工作目录建立任务文件夹；不要把客户端任务塞入服务器的待处理目录。原图、文字、job.json、result.svg、转换文件都保存在该独立目录。相同job-dir重试必须匹配原图/文字哈希、应用和聊天身份；不匹配直接拒绝。
 
@@ -36,7 +36,7 @@ python -X utf8 '<SKILL>/scripts/client.py' stop --job-dir '<原任务目录>'
 
 ## 唤醒与恢复
 
-唤醒只发送到提交时记录并获授权的原聊天。Python使用已有桌面app-tools管道；发送前读取该聊天状态，忙时等下一轮。只发送任务路径和内部回执，不发送登录号或科研正文。
+唤醒只发送到提交时记录并获授权的原聊天。Python使用已有桌面app-tools管道；发送前读取该聊天状态，忙时等下一轮。只发送任务路径和内部回执，不发送API Key或科研正文。
 
 发送前持久化wake_sending，明确接收后wake_sent。超时/断线表示可能已送达，记wake_uncertain，不重复发送。原聊天首步用nonce写wake-received.json，即可恢复不明确的发送状态。不要把独立CLI队列或新聊天当作原聊天唤醒。
 
