@@ -141,6 +141,33 @@ def start(directory):
         raise RuntimeError('Local progress panel unavailable; task receiver remains independent')
 
 
+
+def show(directory, *, force=False, bridge_factory=None):
+    from client import Lock, read, write
+    directory = Path(directory).resolve()
+    url = start(directory)
+    with Lock(directory/'progress-open.lock', 10):
+        meta = read(directory/'progress-panel.json')
+        if meta.get('opened') and not force:
+            return {'progress_url':url,'progress_opened':True}
+        state = read(directory/'job.json')
+        if bridge_factory is None:
+            from desktop_bridge import Bridge
+            bridge_factory = Bridge
+        bridge = bridge_factory(caller_thread_id=state['thread_id'], submit_thread_ids=[], panel_url=url)
+        try:
+            result = bridge._desktop_tool('open_in_codex',{'placement':'right','target':{'type':'browser','url':url}})
+            if result.get('status') not in ('opened','queued','ok'):
+                raise RuntimeError('Progress panel open was not acknowledged')
+            if result.get('threadId',state['thread_id']) != state['thread_id']:
+                raise RuntimeError('Progress panel belongs to another chat')
+            meta.update(opened=True, opened_at=time.time())
+            write(directory/'progress-panel.json',meta)
+            return {'progress_url':url,'progress_opened':True}
+        finally:
+            bridge.close()
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--serve', type=Path, required=True)

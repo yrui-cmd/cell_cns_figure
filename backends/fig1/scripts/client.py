@@ -475,8 +475,8 @@ def recover(registry=LOCAL):
             if s['state'] in WAITING or s['state']=='attention' and s['wake_state']=='pending':
                 if (Path(item)/'progress-panel.json').exists():
                     try:
-                        from progress_panel import start
-                        start(item)
+                        from progress_panel import show
+                        show(item)
                     except Exception:
                         pass  # A display failure must never block result recovery.
                 start_waiter(item); started+=1
@@ -569,13 +569,13 @@ def main():
             result=public(state)
             result['background_waiter_verified']=check_waiter(args.job_dir)
             try:
-                from progress_panel import start
-                result['progress_url']=start(args.job_dir)
+                from progress_panel import show
+                result.update(show(args.job_dir))
             except Exception:
                 result['progress_error']='本地进度面板未启动，任务仍在后台接收；可运行 progress 重试'
         elif args.command=='progress':
-            from progress_panel import start
-            result={'progress_url':start(args.job_dir)}
+            from progress_panel import show
+            result=show(args.job_dir,force=True)
         elif args.command=='status':
             result=public(read(args.job_dir/'job.json'))
             if (args.job_dir/'waiter.json').exists():result['waiter']=read(args.job_dir/'waiter.json')

@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import re
 import shutil
 import subprocess
 import threading
@@ -23,12 +24,15 @@ _PIPE_RELAY = r'''
 const net=require('net'),readline=require('readline');
 const paths=JSON.parse(process.argv[1]),MAX=8*1024*1024;
 const submitThreads=new Set(JSON.parse(process.argv[2]));
+const panel=JSON.parse(process.argv[3]);
 let socket=null,queued=[],closed=false;
 function frame(value){const b=Buffer.from(JSON.stringify(value));if(b.length>MAX)throw Error('frame too large');const h=Buffer.alloc(4);h.writeUInt32LE(b.length);return Buffer.concat([h,b]);}
 function fail(message){if(closed)return;closed=true;process.stderr.write(message+'\n');if(socket)socket.destroy();process.exit(1);}
 function allowed(v){if(v.method==='tools/list')return true;if(v.method!=='tools/call'||v.params?.namespace!=='codex_app')return false;
  if(['read_thread','wait_threads'].includes(v.params?.tool))return true;
- const a=v.params?.arguments;return v.params?.tool==='send_message_to_thread'&&a&&submitThreads.has(a.threadId)&&typeof a.prompt==='string'&&a.prompt.trim()&&Object.keys(a).every(k=>['threadId','prompt'].includes(k));}
+ const a=v.params?.arguments;
+ if(v.params?.tool==='open_in_codex')return panel.url&&v.params.threadId===panel.thread&&a&&Object.keys(a).length===2&&a.placement==='right'&&a.target&&Object.keys(a.target).length===2&&a.target.type==='browser'&&a.target.url===panel.url;
+ return v.params?.tool==='send_message_to_thread'&&a&&submitThreads.has(a.threadId)&&typeof a.prompt==='string'&&a.prompt.trim()&&Object.keys(a).every(k=>['threadId','prompt'].includes(k));}
 readline.createInterface({input:process.stdin}).on('line',line=>{
  try{const v=JSON.parse(line);if(!allowed(v))throw Error('scoped desktop bridge tool denied');
  const b=frame(v);if(socket)socket.write(b);else queued.push(b);}catch(e){fail(e.message);}
@@ -104,10 +108,13 @@ class BridgeError(RuntimeError):
 
 class Bridge:
     def __init__(self, *, rpc_timeout=30, recent_turn_limit=8, caller_thread_id=None,
-                 event_driven=False, submit_thread_ids=None):
+                 event_driven=False, submit_thread_ids=None, panel_url=None):
         self.exe = shutil.which('codex')
         self.submit_thread_ids = frozenset(AUTHORIZED_SUBMIT_THREADS if submit_thread_ids is None
                                            else submit_thread_ids)
+        if panel_url is not None and not re.fullmatch(r'http://127\.0\.0\.1:[0-9]{1,5}/[0-9a-f]{48}/',panel_url):
+            raise ValueError('Only a local task progress URL is permitted')
+        self.panel_url = panel_url
         self.rpc_timeout = rpc_timeout
         self.recent_turn_limit = recent_turn_limit
         self.event_driven = event_driven
@@ -128,7 +135,8 @@ class Bridge:
         if not node:
             raise RuntimeError('Node.js is required for the desktop pipe transport')
         self.process = subprocess.Popen([node, '-e', _PIPE_RELAY, json.dumps(_pipe_candidates()),
-                                          json.dumps(sorted(self.submit_thread_ids))],
+                                          json.dumps(sorted(self.submit_thread_ids)),
+                                          json.dumps({"thread":self.caller_thread_id,"url":self.panel_url})],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             text=True, encoding='utf-8',
             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
@@ -181,8 +189,12 @@ class Bridge:
         # Absolute deadline includes writing. Notifications cannot reset it.
         tool = params.get('tool')
         if method != 'tools/list' and not (method == 'tools/call' and params.get('namespace') == 'codex_app'
-                and tool in {'read_thread', 'wait_threads', 'send_message_to_thread'}):
+                and tool in {'read_thread', 'wait_threads', 'send_message_to_thread', 'open_in_codex'}):
             raise ValueError('Desktop bridge tool denied')
+        if method == 'tools/call' and tool == 'open_in_codex':
+            expected = {'placement':'right','target':{'type':'browser','url':self.panel_url}}
+            if not self.panel_url or params.get('threadId') != self.caller_thread_id or params.get('arguments') != expected:
+                raise ValueError('Progress panel outside authorized scope')
         if method == 'tools/call' and tool == 'send_message_to_thread':
             arguments = params.get('arguments') or {}
             if (arguments.get('threadId') not in self.submit_thread_ids

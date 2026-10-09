@@ -5,6 +5,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 import urllib.error
 import urllib.request
 
@@ -32,6 +33,36 @@ class ProgressTests(unittest.TestCase):
         self.state.update(svg=str(self.root/'result.svg'), svg_sha256=hashlib.sha256(data).hexdigest(),
                           result_received_at=1100, state='ready')
         self.save()
+
+    def test_opens_once_in_original_chat_without_sending_messages(self):
+        self.state['thread_id']='origin-chat';self.save()
+        url='http://127.0.0.1:12345/'+'a'*48+'/'
+        (self.root/'progress-panel.json').write_text(json.dumps({'url':url}),encoding='utf-8')
+        outer=self
+        class Bridge:
+            calls=[]
+            def __init__(self,**kwargs):
+                outer.assertEqual(kwargs,dict(caller_thread_id='origin-chat',submit_thread_ids=[],panel_url=url))
+            def _desktop_tool(self,tool,args):
+                self.calls.append(tool)
+                outer.assertEqual(tool,'open_in_codex')
+                outer.assertEqual(args,dict(placement='right',target=dict(type='browser',url=url)))
+                return dict(status='queued',threadId='origin-chat')
+            def close(self):pass
+        with patch.object(p,'start',return_value=url):
+            self.assertTrue(p.show(self.root,bridge_factory=Bridge)['progress_opened'])
+            self.assertTrue(p.show(self.root,bridge_factory=Bridge)['progress_opened'])
+        self.assertEqual(Bridge.calls,['open_in_codex'])
+
+    def test_bridge_rejects_other_urls_and_threads(self):
+        from desktop_bridge import Bridge
+        bridge=Bridge.__new__(Bridge)
+        bridge.caller_thread_id='origin-chat'
+        bridge.panel_url='http://127.0.0.1:12345/'+'a'*48+'/'
+        good={'placement':'right','target':{'type':'browser','url':bridge.panel_url}}
+        for thread,args in [('other-chat',good),('origin-chat',{'placement':'right','target':{'type':'browser','url':'https://example.org'}})]:
+            with self.assertRaises(ValueError):
+                bridge.call('tools/call',dict(namespace='codex_app',tool='open_in_codex',threadId=thread,arguments=args))
 
     def test_estimate_caps_at_99_even_after_an_hour(self):
         self.assertEqual(p.snapshot(self.root,now=1000)['percent'],0)
