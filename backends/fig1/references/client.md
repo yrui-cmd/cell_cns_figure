@@ -1,6 +1,6 @@
 # 客户端运行
 
-仅Windows Codex桌面支持本Skill的后台唤醒。接口固定为脚本内常量，不读环境变量、不接受CLI地址、不跟随重定向。图片必填在本地解码验证后才能发送；当前服务端仍允许其他客户端文字任务，本Skill不会使用该分支。
+仅Windows Codex桌面支持本Skill的后台唤醒。接口固定为脚本内常量，不读环境变量、不接受CLI地址、不跟随重定向。支持文字、图片或图文一起，至少提供一项；提供图片时先在本地解码验证。
 
 ## 命令
 
@@ -10,13 +10,15 @@
 python -X utf8 '<SKILL>/scripts/client.py' probe
 python -X utf8 '<SKILL>/scripts/client.py' discover-key
 python -X utf8 '<SKILL>/scripts/client.py' balance
-python -X utf8 '<SKILL>/scripts/client.py' submit --image '<原图.png>' --text-file '<可选文字.txt>' --application ppt --thread-id '<当前CODEX_THREAD_ID>' --job-dir '<独立任务目录>' --credits-approved 20 --authorize-wake
+python -X utf8 '<SKILL>/scripts/client.py' submit --text-file '<文字.txt>' --application ppt --thread-id '<当前CODEX_THREAD_ID>' --job-dir '<独立任务目录>' --credits-approved 20 --authorize-wake
 python -X utf8 '<SKILL>/scripts/client.py' status --job-dir '<原任务目录>'
 python -X utf8 '<SKILL>/scripts/client.py' resume --job-dir '<原任务目录>'
 python -X utf8 '<SKILL>/scripts/client.py' stop --job-dir '<原任务目录>'
 ```
 
 没有文字就省略--text-file；不要填占位文字。默认凭据为当前用户`LocalAppData/Xiaomiao/cell-figure-plus-customer.txt`，DPAPI密文。需要为另一个客户配置时用明确的凭据文件，不覆盖其他账户。`configure-key`从stdin读取一行客户密钥，并排他创建密文文件；从不接受命令行明文密钥。
+
+有图片时使用`--image`，有文字时使用`--text-file`，可同时使用。
 
 可在用户指定输出位置或当前聊天工作目录建立任务文件夹；不要把客户端任务塞入服务器的CNS_plus待处理目录。原图、文字、job.json、result.svg、转换文件都保存在该独立目录。相同job-dir重试必须匹配原图/文字哈希、应用和聊天身份；不匹配直接拒绝。
 

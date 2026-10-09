@@ -16,7 +16,7 @@ description: 合并cell_cns_fig1和cell_cns_fig2的客户绘图入口。使用�
 用户已选1/2或对应旧名称时直接沿用，不重复询问、不自行改选。新任务开始后固定该方案；后台返回、重启或异常恢复不重新选方案。用户在上述明确价格后选择并要求处理，已授权本任务对应费用，不再重复确认。仅提及名称或询问价格不等于提交。
 
 选择后仅加载对应内部流程：
-- 1号：[内部流程](backends/fig1/WORKFLOW.md)，Python入口为本Skill目录下`backends/fig1/scripts/client.py`。图片必需、文字可选；固定20额度。
+- 1号：[内部流程](backends/fig1/WORKFLOW.md)，Python入口为本Skill目录下`backends/fig1/scripts/client.py`。文字、图片或图文均可；固定20额度。
 - 2号：[内部流程](backends/fig2/WORKFLOW.md)，Python入口为本Skill目录下`backends/fig2/scripts/client.py`。文字、图片或图文；固定45额度。
 
 内部流程里的`<SKILL>`指该分支目录，不是合并入口目录。接口、请求ID、凭据、恢复任务、输入限制、校验和PPT/AI直接路径映射沿用对应分支，不能混用。

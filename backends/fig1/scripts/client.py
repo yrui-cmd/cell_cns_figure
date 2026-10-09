@@ -1,4 +1,4 @@
-"""Image-required client, detached result receiver, and original-chat handoff.
+"""Text-or-image client, detached result receiver, and original-chat handoff.
 
 No admin/worker credentials; this client uses the customer's existing balance.
 State is persisted before every paid request and every chat-send boundary.
@@ -181,7 +181,7 @@ class API:
 
 def inspect_image(path):
     if not path or not Path(path).is_file():
-        raise ClientError('必须提供一张 PNG 或 JPG 图片；没有图片不提交、不扣费')
+        raise ClientError('提供的图片不存在；请使用有效的 PNG 或 JPG 文件')
     path = Path(path)
     if path.stat().st_size == 0 or path.stat().st_size > MAX_IMAGE:
         raise ClientError('图片必须非空且不超过 10 MiB')
@@ -203,7 +203,17 @@ def inspect_image(path):
     return path.read_bytes(), '.png' if fmt == 'PNG' else '.jpg'
 
 
-def prepare(directory, *, image, text='', application, thread_id, credential_file,
+def inspect_inputs(image, text):
+    if not isinstance(text, str) or len(text) > 500000:
+        raise ClientError('文字无效或过长')
+    text = text.strip()
+    data, ext = inspect_image(image) if image is not None else (b'', None)
+    if not data and not text:
+        raise ClientError('请提供文字或图片')
+    return data, ext, text
+
+
+def prepare(directory, *, image=None, text='', application, thread_id, credential_file,
             credits_approved, wake_authorized, api=None, registry=LOCAL):
     if credits_approved != PRICE or not wake_authorized:
         raise ClientError('Need 20-credit approval and original-chat wake authorization')
@@ -213,10 +223,7 @@ def prepare(directory, *, image, text='', application, thread_id, credential_fil
         thread_id = str(uuid.UUID(thread_id))
     except (ValueError, TypeError, AttributeError):
         raise ClientError('Cannot identify the originating chat') from None
-    data, ext = inspect_image(image)  # Required image gate runs before any HTTP request.
-    if not isinstance(text, str) or len(text) > 500000:
-        raise ClientError('Invalid optional text')
-    text = text.strip()
+    data, ext, text = inspect_inputs(image, text)
     directory = Path(directory).resolve()
     directory.mkdir(parents=True, exist_ok=True)
     fingerprint = sha(data+b'\0'+text.encode())
@@ -230,11 +237,12 @@ def prepare(directory, *, image, text='', application, thread_id, credential_fil
         me = api.me()
         if me['credits_available'] < PRICE:
             raise ClientError('可用额度不足 20，不提交')
-        original = directory/('input'+ext)
-        original.write_bytes(data)
+        original = directory/('input'+ext) if ext else None
+        if original is not None:
+            original.write_bytes(data)
         (directory/'requirements.txt').write_text(text, encoding='utf-8')
         state = {'version':1,'state':'submitting','request_id':uuid.uuid4().hex,
-                 'job_id':None,'fingerprint':fingerprint,'image':str(original),'image_sha256':sha(data),
+                 'job_id':None,'fingerprint':fingerprint,'image':str(original) if original else None,'image_sha256':sha(data),
                  'text_sha256':sha(text.encode()),'application':application,'thread_id':thread_id,
                  'credential_file':str(Path(credential_file).resolve()),'account_id':me['id'],
                  'credits_approved':PRICE,'credits_before':me['credits_available'],'wake_authorized':True,
@@ -261,13 +269,17 @@ def submit_existing(directory, api=None):
         me = api.me()
         if me['id'] != state['account_id']:
             raise ClientError('Configured account changed; refusing to resubmit or switch billing account')
-        data = Path(state['image']).read_bytes()
+        data = Path(state['image']).read_bytes() if state.get('image') else b''
         text = (directory/'requirements.txt').read_text(encoding='utf-8')
         if sha(data) != state['image_sha256'] or sha(text.encode()) != state['text_sha256']:
             raise ClientError('Saved inputs changed; refusing paid submission')
+        if not data and not text.strip():
+            raise ClientError('请提供文字或图片')
+        payload = {'request_id':state['request_id'],'text':text,'credits_approved':PRICE}
+        if state.get('image'):
+            payload['image'] = {'name':Path(state['image']).name,'base64':base64.b64encode(data).decode()}
         try:
-            result = api.submit({'request_id':state['request_id'],'text':text,'credits_approved':PRICE,
-                                 'image':{'name':Path(state['image']).name,'base64':base64.b64encode(data).decode()}})
+            result = api.submit(payload)
         except Exception as e:
             state['state'] = 'attention' if isinstance(e,ApiError) and e.status in (400,401,402,403,409,413) else 'submit_unknown'
             state['last_error'] = type(e).__name__ + (':'+str(e.status) if isinstance(e,ApiError) else '')
@@ -502,7 +514,7 @@ def main():
     for name in ('balance','configure-key','discover-key'):
         q=commands.add_parser(name);q.add_argument('--credential-file',type=Path)
     q=commands.add_parser('submit')
-    q.add_argument('--image',type=Path,required=True)
+    q.add_argument('--image',type=Path)
     q.add_argument('--text-file',type=Path)
     q.add_argument('--application',choices=('ppt','ai'),required=True)
     q.add_argument('--thread-id',default=os.environ.get('CODEX_THREAD_ID'))
@@ -534,14 +546,15 @@ def main():
             m=API(args.credential_file).me();result={k:m[k] for k in ('credits_available','credits_per_task')}
         elif args.command=='submit':
             # Register crash/login recovery before incurring a charge.
-            inspect_image(args.image)
+            text = args.text_file.read_text(encoding='utf-8-sig') if args.text_file else ''
+            inspect_inputs(args.image, text)
             # Existing jobs retain the pinned credential; do not rediscover an account.
             if (args.job_dir/'job.json').exists():
                 args.credential_file=Path(read(args.job_dir/'job.json')['credential_file'])
             else:
                 args.credential_file=resolve_credential(DEFAULT_KEY,args.credential_file)
             install_recovery()
-            state=prepare(args.job_dir,image=args.image,text=args.text_file.read_text(encoding='utf-8-sig') if args.text_file else '',
+            state=prepare(args.job_dir,image=args.image,text=text,
                 application=args.application,thread_id=args.thread_id,credential_file=args.credential_file,
                 credits_approved=args.credits_approved,wake_authorized=args.authorize_wake)
             register(args.job_dir)

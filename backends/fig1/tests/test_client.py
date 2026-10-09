@@ -71,9 +71,31 @@ class ClientTests(unittest.TestCase):
                 return {'queued':True,'thread_id':thread}
             def close(self):pass
         return Bridge
-    def test_image_required_before_network(self):
+    def test_empty_input_rejected_before_network(self):
         with patch.object(self.api,'me',side_effect=AssertionError('network')):
             with self.assertRaises(c.ClientError):self.prepare(image=None)
+    def test_text_only_retry_deducts_once_and_downloads(self):
+        first=self.prepare(image=None,text='  Research description  ')
+        self.assertIsNone(first['image'])
+        self.assertFalse(list(self.job.glob('input.*')))
+        self.api.lose=True
+        with self.assertRaises(TimeoutError):c.submit_existing(self.job,self.api)
+        state=c.submit_existing(self.job,self.api)
+        self.assertEqual(state['state'],'waiting')
+        self.assertEqual(self.api.balance,20)
+        self.assertEqual([p['request_id'] for p in self.api.submits],[first['request_id']]*2)
+        self.assertNotIn('image',self.api.submits[0])
+        self.assertEqual(self.api.submits[0]['text'],'Research description')
+        self.assertEqual(c.poll_once(self.job,self.api)['state'],'ready')
+    def test_text_only_saved_text_tamper_rejected(self):
+        self.prepare(image=None,text='Research description')
+        (self.job/'requirements.txt').write_text('Changed',encoding='utf-8')
+        with self.assertRaises(c.ClientError):c.submit_existing(self.job,self.api)
+        self.assertFalse(self.api.submits)
+    def test_text_does_not_hide_invalid_image(self):
+        with patch.object(self.api,'me',side_effect=AssertionError('network')):
+            with self.assertRaises(c.ClientError):self.prepare(image=self.root/'missing.png',text='Valid text')
+            with self.assertRaises(c.ClientError):self.prepare(image=None,text='  ')
     def test_fake_extension_rejected(self):
         self.img.write_text('not an image')
         with self.assertRaises(c.ClientError):self.prepare()
