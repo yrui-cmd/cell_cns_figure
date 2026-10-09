@@ -19,7 +19,7 @@ description: 合并cell_cns_fig1和cell_cns_fig2的客户绘图入口。使用�
 - 1号：[内部流程](backends/fig1/WORKFLOW.md)，Python入口为本Skill目录下`backends/fig1/scripts/client.py`。文字、图片或图文均可；固定20额度。
 - 2号：[内部流程](backends/fig2/WORKFLOW.md)，Python入口为本Skill目录下`backends/fig2/scripts/client.py`。文字、图片或图文；固定45额度。
 
-内部流程里的`<SKILL>`指该分支目录，不是合并入口目录。接口、请求ID、凭据、恢复任务、输入限制、校验和PPT/AI直接路径映射沿用对应分支，不能混用。
+内部流程里的`<SKILL>`指该分支目录，不是合并入口目录。接口、请求ID、凭据、恢复任务、输入限制、校验和PPT/AI内置原生转换沿用对应分支，不能混用。
 
 ## 对话规则
 
@@ -42,3 +42,9 @@ description: 合并cell_cns_fig1和cell_cns_fig2的客户绘图入口。使用�
 ## 本地进度面板
 
 提交成功后脚本自动在原聊天右侧创建并打开进度面板，返回 `progress_opened=true`，随后结束本轮；不要由模型重复打开面板。面板与后台接收器独立运行，显示持续流动动画并按一小时预估从0到99%，只有Python已接收、校验并保存返回SVG才到100%；提前收到即提前完成，超时保持99%等待。面板只读取本地状态，不访问网站，不调用模型或持续发送进度消息。100%表示结果已接收，PPT/AI后处理仍由原聊天继续。异常或暂停如实显示，不能伪装完成。原面板关闭或连接中断时，用对应分支的 `client.py progress --job-dir <原目录>`恢复并重新打开，不重新提交或扣费。
+
+## 内置原生绘制
+
+SVG→PPT/AI 的绘制代码、缓存解析和运行脚本固定内置在 `native/scripts`，1号、2号共同使用。运行时不临时调用或要求安装 cell_su7。执行细节见对应分支的 references/postprocess.md。
+
+嵌套素材必须按 x/y、尺寸、viewBox、preserveAspectRatio 和父级变换共同定位；禁止丢失视口坐标造成素材堆在左上角。旧版 direct-path-v1 输出重新转换到新目录，不覆盖旧文件、不重新提交收费订单。生成完成后查看实际预览，核对素材位置、比例、箭头、叠放和文字遮挡再交付。遇到不支持的 SVG 效果要报告，不能删掉效果后假称完成。

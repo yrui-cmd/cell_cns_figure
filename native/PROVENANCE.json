@@ -1,0 +1,20 @@
+{
+  "source": "cell_su7 approved SVG native drawing branch",
+  "bundled_on": "2026-10-09",
+  "runtime_external_skill_dependency": false,
+  "source_sha256": {
+    "allocate_shibielujing_name.py": "5989adac6b5714752000cd8e19eaf74dcd2aa180d37eb8d6fab4dd6c8dfac5dd",
+    "canvas_clip.py": "f198e77af02bc673aea79cc7f4327b514ca225c4e2d5a0a23eb96ac23ea5ed26",
+    "cell_lct_cached_runtime.jsx": "a9abaa1d405859f16493dbf48dc04d9bea82b1dc5a87a2ad38533e2cd81c4cda",
+    "cull_hidden_geometry.py": "743cb5ca90fef34a39cef4105073fceaed526b771a211e025abdf10579562709",
+    "prepare_geometry_cache.py": "1276a1d630bc7cf08d2a986f0ca01be250f923fb3adf4442afe6bbbf217f00dd",
+    "prepare_illustrator_cache.py": "50724362f0509f531c92aedbf8fad67c4ae495077d69d663dcc8771584f11367",
+    "prepare_path_playback.py": "e3c10db5839b5af39d31df84d99673a3d3b0a0368ef9ef8b4ee0eb3d64d0ab17",
+    "run_cell_lct.ps1": "5900713f8423a210eba28579003d74e60fcc6a3c4b0fb2c2c503e9d08e1255c1",
+    "run_cell_ppt_ooxml.py": "9eed80d28bdc066b28a798ba6e9380e91142fdd2be17e1d1676ddc1c32f47024",
+    "run_from_svg.py": "b847a9cbc6582f15a846050734d1a26c67dbadd6e3719d6a7873c3e097b42ffa",
+    "run_illustrator.py": "cc654a247b46416f6f63196549bf4b771ff8f8e028103a66fe22b0e034784ebe",
+    "run_ppt_path_playback.ps1": "3a44f096b353d3ba54c10deb4bd70bf1f11e08211e386c386373e1ac69928ec0",
+    "validate_vector_svg.py": "b7413902b46928f5fad6ca25261ce394ebd0abbcd6632bd6e08c0463e3b7c16d"
+  }
+}

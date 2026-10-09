@@ -14,18 +14,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Skill 下载失败，请检查目标目录和�
 python -m pip install -r (Join-Path $skillsRoot 'cell_cns_figure/requirements.txt')
 ```
 
-SVG 转换复用 [cell_su7](https://github.com/yrui-cmd/cell_su7) 的脚本，需要与本 Skill 同级安装。如果已经安装 `cell_su7`，可跳过下面的复制。本版本在该依赖的 `95dce2b972d8b93f36a95e7f045f4d3910a44313` 提交上验证。
-
-```powershell
-$su7Source = Join-Path $env:TEMP ('cell-su7-source-' + [guid]::NewGuid().ToString('N'))
-git clone https://github.com/yrui-cmd/cell_su7.git $su7Source
-if ($LASTEXITCODE -ne 0) { throw 'cell_su7 下载失败' }
-git -C $su7Source checkout 95dce2b972d8b93f36a95e7f045f4d3910a44313
-if ($LASTEXITCODE -ne 0) { throw 'cell_su7 版本切换失败' }
-$su7Target = Join-Path $skillsRoot 'cell_su7'
-if (Test-Path -LiteralPath $su7Target) { throw 'cell_su7 已存在，请检查现有安装' }
-Copy-Item -LiteralPath (Join-Path $su7Source 'plugins/cell_su7/skills/cell_su7') -Destination $su7Target -Recurse
-```
+SVG→PPT/AI 转换代码已随本 Skill 完整内置，不需要安装同级 cell_su7，也不会运行时下载或临时调用它。
 
 最终结构：
 
@@ -35,8 +24,7 @@ skills/
     SKILL.md
     backends/fig1/
     backends/fig2/
-  cell_su7/
-    scripts/
+    native/scripts/
 ```
 
 让 Codex 重新加载 Skills 后，在聊天中调用：
@@ -65,19 +53,20 @@ python -X utf8 '<Skill目录>/backends/fig1/scripts/client.py' probe
 
 ## 输出与适用边界
 
-输出为原生可编辑 PPTX 或 AI，并保留接收到的 SVG。这里只调用 `cell_su7` 的 SVG 转换脚本，不调用其图片识别或其他收费入口。
+输出为原生可编辑 PPTX 或 AI，并保留接收到的 SVG。转换完全使用本 Skill 的内置代码，不调用图片识别或其他收费入口。
 
-直接路径映射保留坐标、变换、叠放顺序及复合路径；裁剪、蒙版和滤镜不参与转换，渐变取首色，虚线转实线，曲线文字转为锚点处普通文字。因此可编辑文件可能与 SVG 渲染有差异。交付前仍需查看实际预览。
+已修正嵌套 SVG 的视口位置和尺寸计算。尚未支持的 SVG 效果会报告预处理需求，不能静默丢弃；交付前仍需查看实际软件预览。旧版结果重新转换时使用新输出目录，不覆盖已有结果、不重新扣费。
 
-本版本本地验证了82项测试，包括模拟服务接发、重复提交保护、历史价格恢复、SVG校验和真实原生PPTX文件生成；未提交收费测试订单，也未在发布测试中运行真实 Illustrator 或完整线上生成流程。
+本轮验证包含两条客户端流程、独立内置转换器的真实 PPTX 输出和 Illustrator 几何缓存；未运行真实 Illustrator 桌面导出或付费线上任务。
 
 ## 开发测试
 
-保持上述同级依赖结构，在仓库根目录分别运行两个测试套件（使用独立进程，避免同名模块冲突）：
+在仓库根目录分别运行两个测试套件（使用独立进程，避免同名模块冲突）：
 
 ```powershell
 python -X utf8 -m unittest discover -s backends/fig1/tests -v
 python -X utf8 -m unittest discover -s backends/fig2/tests -v
+python -X utf8 -m unittest discover -s native/tests -v
 ```
 
 ## 数据与许可

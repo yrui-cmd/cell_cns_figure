@@ -9,18 +9,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: cell_cns_figure
-      - uses: actions/checkout@v4
-        with:
-          repository: yrui-cmd/cell_su7
-          ref: 95dce2b972d8b93f36a95e7f045f4d3910a44313
-          path: su7-source
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - name: Install dependencies
         shell: pwsh
         run: |
-          Copy-Item -LiteralPath 'su7-source/plugins/cell_su7/skills/cell_su7' -Destination 'cell_su7' -Recurse
           python -m pip install -r cell_cns_figure/requirements.txt
       - name: Test route 1
         working-directory: cell_cns_figure
@@ -28,3 +22,6 @@ jobs:
       - name: Test route 2
         working-directory: cell_cns_figure
         run: python -X utf8 -m unittest discover -s backends/fig2/tests -v
+      - name: Test bundled native layout
+        working-directory: cell_cns_figure
+        run: python -X utf8 -m unittest discover -s native/tests -v

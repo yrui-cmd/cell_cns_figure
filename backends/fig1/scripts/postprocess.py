@@ -1,4 +1,4 @@
-"""Only the approved-SVG branch of cell_su7. Never invoke a paid image route."""
+"""Bundled approved-SVG native drawing. No sibling Skill or paid image route."""
 import json
 import os
 import subprocess
@@ -11,10 +11,10 @@ from client import ACCEPTED_PRICES, ClientError, Lock, SKILL, read, sha, update,
 
 
 def dependency():
-    root=SKILL.parents[2]/'cell_su7'/'scripts'
+    root=SKILL.parents[1]/'native'/'scripts'
     required=('run_from_svg.py','run_illustrator.py','allocate_shibielujing_name.py','validate_vector_svg.py')
     if not all((root/f).is_file() for f in required):
-        raise ClientError('缺少同级 cell_su7 的 SVG 后处理脚本，请先安装该 Skill')
+        raise ClientError('本 Skill 内置 SVG 转换文件不完整，请修复 cell_cns_figure 安装')
     return root
 
 
@@ -33,12 +33,13 @@ def pptx_audit(path):
 def run(command, log):
     with log.open('ab') as f:
         offset=f.tell()
-        proc=subprocess.run(command,stdout=f,stderr=f)
+        proc=subprocess.run(command,stdout=f,stderr=f,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
     if proc.returncode:
         with log.open('rb') as f:
             f.seek(offset)
             detail=f.read(65536).decode('utf-8',errors='replace')
         reasons={
+            'Nested SVG viewport clipping requires preprocessing':'返回 SVG 存在真实子视口裁剪，需要展开后再转换，已停止以避免素材越界',
             'Only redundant full-canvas clipping can be removed automatically':'返回 SVG 含局部裁剪，当前转换器需要先展开裁剪，尚未生成可交付文件',
             'Even-odd compound fill requires winding normalization':'返回 SVG 的奇偶填充复合路径需要先规范化绕向，尚未生成可交付文件',
             'AI_NOT_RUNNING':'Illustrator 尚未打开，请打开 Illustrator 和测试用目标文档后继续原任务',
@@ -68,16 +69,13 @@ def convert(directory, *, file_only=False):
         scripts=dependency()
         destination=directory/'editable'
         destination.mkdir(exist_ok=True)
-        name=state.get('conversion_name') if state.get('conversion_mode')=='direct-path-v1' else None
+        name=state.get('conversion_name') if state.get('conversion_mode')=='bundled-native-v2' else None
         if not name:
-            name=subprocess.check_output([sys.executable,str(scripts/'allocate_shibielujing_name.py'),'--root',str(destination)],text=True).strip().splitlines()[-1]
-            update(directory,conversion_name=name,conversion_mode='direct-path-v1')
+            name=subprocess.check_output([sys.executable,str(scripts/'allocate_shibielujing_name.py'),'--root',str(destination)],text=True,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0)).strip().splitlines()[-1]
+            update(directory,conversion_name=name,conversion_mode='bundled-native-v2')
         output=destination/name
-        from direct_svg import prepare
-        mapping_svg=output/(name+'-direct.svg')
-        mapping=prepare(svg,mapping_svg,application=state['application'])
-        write(directory/'direct-mapping.json',mapping)
-        mapping_sha=sha(mapping_svg.read_bytes())
+        mapping_svg=svg  # Immutable original; no destructive effect stripping.
+        mapping_sha=state['svg_sha256']
         log=directory/'conversion.log'
         target=output/(name+('.pptx' if state['application']=='ppt' else '.ai'))
         update(directory,conversion='running')
@@ -85,9 +83,9 @@ def convert(directory, *, file_only=False):
             # Reuse a verified native output; do not redraw after a chat interruption.
             native_receipt=directory/'native-output.json'
             old=read(native_receipt) if native_receipt.exists() else {}
-            reusable=old.get('mapping_sha256')==mapping_sha and old.get('conversion_mode')=='direct-path-v1' and old.get('svg_sha256')==state['svg_sha256'] and target.is_file() and old.get('native_sha256')==sha(target.read_bytes())
+            reusable=old.get('mapping_sha256')==mapping_sha and old.get('conversion_mode')=='bundled-native-v2' and old.get('svg_sha256')==state['svg_sha256'] and target.is_file() and old.get('native_sha256')==sha(target.read_bytes())
             if not reusable:
-                route=SKILL/'scripts/run_direct_ppt.py' if state['application']=='ppt' else scripts/'run_illustrator.py'
+                route=scripts/'run_from_svg.py' if state['application']=='ppt' else scripts/'run_illustrator.py'
                 run([sys.executable,'-X','utf8',str(route),'--input-svg',str(mapping_svg),
                      '--output-root',str(destination),'--job-name',name],log)
             if not target.is_file() or target.stat().st_size==0:
@@ -114,7 +112,7 @@ def convert(directory, *, file_only=False):
                 preview=output/(name+'.png')
                 if not preview.is_file():raise ClientError('Illustrator PNG preview missing')
                 result['preview']=str(preview)
-            receipt={**result,'svg_sha256':state['svg_sha256'],'conversion_mode':'direct-path-v1','mapping_sha256':mapping_sha,'native_sha256':sha(target.read_bytes()),
+            receipt={**result,'svg_sha256':state['svg_sha256'],'conversion_mode':'bundled-native-v2','mapping_sha256':mapping_sha,'native_sha256':sha(target.read_bytes()),
                      'playback_sha256':sha(Path(result['playback']).read_bytes()) if result.get('playback') else None}
             write(native_receipt,receipt)
             update(directory,conversion='native_ready',deliverables=result,last_error=None)
@@ -133,6 +131,8 @@ def complete(directory, *, visual_checked):
     if not visual_checked or state['conversion']!='native_ready':
         raise ClientError('Native conversion and actual visual verification required')
     result=read(directory/'native-output.json')
+    if state.get('conversion_mode')!='bundled-native-v2' or result.get('conversion_mode')!='bundled-native-v2':
+        raise ClientError('旧版转换结果需要先重新执行 convert；沿用原 SVG，不重新付费')
     if sha(Path(state['svg']).read_bytes())!=state['svg_sha256'] or result['svg_sha256']!=state['svg_sha256']:
         raise ClientError('Returned SVG changed since conversion')
     if sha(Path(result['native']).read_bytes())!=result['native_sha256']:

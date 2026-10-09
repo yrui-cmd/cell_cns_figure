@@ -233,6 +233,19 @@ class ClientTests(unittest.TestCase):
         with patch.object(c,'poll_once',side_effect=lambda directory:c.update(directory,state='stopped')),patch.object(c.time,'sleep'):
             c.wait(self.job)
         self.assertEqual(c.read(self.job/'waiter.json')['pid'],os.getpid())
+    def test_old_conversion_gets_new_output_and_preserves_original(self):
+        self.ready()
+        old=self.job/'editable/shibielujing1'
+        old.mkdir(parents=True)
+        original=old/'shibielujing1.pptx'
+        original.write_bytes(b'old-layout-output')
+        c.update(self.job,conversion_mode='direct-path-v1',conversion_name='shibielujing1')
+        result=pp.convert(self.job,file_only=True)
+        self.assertNotEqual(Path(result['native']),original)
+        self.assertEqual(original.read_bytes(),b'old-layout-output')
+        self.assertEqual(c.read(self.job/'job.json')['conversion_mode'],'bundled-native-v2')
+        self.assertEqual(pp.dependency(),c.SKILL.parents[1]/'native/scripts')
+
     def test_native_ppt_conversion_and_resume(self):
         self.ready()
         try:result=pp.convert(self.job,file_only=True)
