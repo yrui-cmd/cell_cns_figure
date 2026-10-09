@@ -211,7 +211,7 @@ def inspect_image(path):
 
 
 def prepare(directory, *, image, text='', application, thread_id, credential_file,
-            credits_approved, wake_authorized, api=None, registry=LOCAL):
+            credits_approved, wake_authorized, api=None, registry=LOCAL, font_family=None):
     if credits_approved != PRICE or not wake_authorized:
         raise ClientError('Need 45-credit approval and original-chat wake authorization')
     if application not in ('ppt','ai'):
@@ -246,6 +246,7 @@ def prepare(directory, *, image, text='', application, thread_id, credential_fil
         state = {'version':1,'service':PREFIX,'state':'submitting','request_id':uuid.uuid4().hex,
                  'job_id':None,'fingerprint':fingerprint,'image':str(original) if original else None,'image_sha256':sha(data),
                  'text_sha256':sha(text.encode()),'application':application,'thread_id':thread_id,
+                 'font_family':font_family or 'Times New Roman',
                  'credential_file':str(Path(credential_file).resolve()),'account_id':me['id'],
                  'credits_approved':PRICE,'credits_before':me['credits_available'],'wake_authorized':True,
                  'created_at':time.time(),'updated_at':time.time(),'wake_nonce':uuid.uuid4().hex,
@@ -541,11 +542,14 @@ def main():
     q.add_argument('--credential-file',type=Path)
     q.add_argument('--credits-approved',type=int,required=True)
     q.add_argument('--authorize-wake',action='store_true',required=True)
+    q.add_argument('--font',dest='font_family',help='User-requested output font; default Times New Roman')
     q.add_argument('--job-dir',type=Path,required=True)
     for name in ('status','wait','resume','stop','acknowledge','convert','complete','progress'):
         q=commands.add_parser(name);q.add_argument('--job-dir',type=Path,required=True)
         if name=='acknowledge':q.add_argument('--nonce',required=True)
-        if name=='convert':q.add_argument('--file-only',action='store_true')
+        if name=='convert':
+            q.add_argument('--file-only',action='store_true')
+            q.add_argument('--font',dest='font_family',help='Override the saved output font')
         if name=='complete':q.add_argument('--visual-checked',action='store_true',required=True)
     commands.add_parser('recover')
     commands.add_parser('probe')
@@ -578,7 +582,7 @@ def main():
             install_recovery()
             state=prepare(args.job_dir,image=args.image,text=text,
                 application=args.application,thread_id=args.thread_id,credential_file=args.credential_file,
-                credits_approved=args.credits_approved,wake_authorized=args.authorize_wake)
+                credits_approved=args.credits_approved,wake_authorized=args.authorize_wake,font_family=args.font_family)
             register(args.job_dir)
             try: state=submit_existing(args.job_dir)
             finally: start_waiter(args.job_dir)
@@ -605,7 +609,7 @@ def main():
         elif args.command=='acknowledge':result=public(acknowledge(args.job_dir,args.nonce))
         elif args.command in ('convert','complete'):
             from postprocess import convert, complete
-            result=convert(args.job_dir,file_only=args.file_only) if args.command=='convert' else complete(args.job_dir,visual_checked=args.visual_checked)
+            result=convert(args.job_dir,file_only=args.file_only,font_family=args.font_family) if args.command=='convert' else complete(args.job_dir,visual_checked=args.visual_checked)
         elif args.command=='recover':result=recover()
         elif args.command=='setup-waiter':
             install_recovery();result={'recovery_installed':True}

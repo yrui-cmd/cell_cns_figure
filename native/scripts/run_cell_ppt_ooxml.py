@@ -112,7 +112,7 @@ def add_freeform(slide, subpath, paint, name, shape_id, transform):
             commands.append("<a:close/>")
 
     fill = "<a:noFill/>"
-    if paint.get("filled") and any(source.get("closed") for source, _ in mapped_paths):
+    if paint.get("filled"):
         fill = (
             f'<a:solidFill><a:srgbClr val="{rgb_hex(paint.get("fillColor"))}">'
             f'{alpha_xml(paint.get("opacity", 100))}</a:srgbClr></a:solidFill>'
@@ -176,7 +176,7 @@ def add_text(slide, atom, transform):
     run = paragraph.add_run()
     run.text = str(text["contents"])
     font = run.font
-    font.name = str(text.get("fontFamily") or "Arial")
+    font.name = str(text.get("fontFamily") or "Times New Roman")
     font.size = Pt(size)
     weight = str(text.get("fontWeight", "")).strip().lower()
     font.bold = weight == "bold" or (weight.isdigit() and int(weight) >= 600)

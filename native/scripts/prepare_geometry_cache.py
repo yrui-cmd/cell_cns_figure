@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-from svg_viewport import resolve as resolve_viewport, check_clip
+from svg_viewport import resolve as resolve_viewport, clip_atoms, numeric_geometry
 from fontTools.misc.transform import Transform
 from fontTools.pens.qu2cuPen import Qu2CuPen
 from fontTools.pens.recordingPen import RecordingPen
@@ -49,7 +49,7 @@ DEFAULT_PRESENTATION = {
     "stroke-dashoffset": "0",
     "vector-effect": "none",
     "visibility": "visible",
-    "font-family": "Arial",
+    "font-family": "Times New Roman",
     "font-size": "16",
     "font-style": "normal",
     "font-weight": "normal",
@@ -309,8 +309,6 @@ def recording_to_subpaths(recording: list[tuple[str, tuple]]) -> list[dict]:
         else:
             raise ValueError(f"Unsupported parsed path operation: {operation}")
     flush(False)
-    if not subpaths:
-        raise ValueError("Vector atom produced no drawable subpaths")
     return subpaths
 
 
@@ -364,13 +362,14 @@ def paint_parts(presentation: dict[str, str], accumulated_opacity: float, stroke
     fill_opacity = accumulated_opacity * opacity_value(presentation.get("fill-opacity")) * fill_alpha
     stroke_opacity = accumulated_opacity * opacity_value(presentation.get("stroke-opacity")) * stroke_alpha
     filled = fill_color is not None and fill_opacity > 0
-    stroked = stroke_color is not None and stroke_opacity > 0
+    stroke_width = parse_number(presentation.get("stroke-width"), 1.0)
+    stroked = stroke_color is not None and stroke_opacity > 0 and stroke_width > 0
     if not filled and not stroked:
         return []
     non_scaling_stroke = presentation.get("vector-effect", "none").strip().lower() == "non-scaling-stroke"
     common = {
         "fillRule": "evenodd" if presentation.get("fill-rule", "nonzero").strip().lower() == "evenodd" else "nonzero",
-        "strokeWidth": rounded((parse_number(presentation.get("stroke-width"), 1.0) or 1.0) * (1.0 if non_scaling_stroke else stroke_scale)),
+        "strokeWidth": rounded(stroke_width * (1.0 if non_scaling_stroke else stroke_scale)),
         "nonScalingStroke": non_scaling_stroke,
         "strokeCap": presentation.get("stroke-linecap", "butt").strip().lower(),
         "strokeJoin": presentation.get("stroke-linejoin", "miter").strip().lower(),
@@ -415,7 +414,7 @@ def parse_atom(element: ET.Element, transform: Transform, presentation: dict[str
         text_scale = math.sqrt(abs(determinant)) if determinant else 1.0
         font_size = (parse_number(presentation.get("font-size"), 16.0) or 16.0) * text_scale
         letter_spacing = (parse_number(presentation.get("letter-spacing"), 0.0) or 0.0) * text_scale
-        font_family = presentation.get("font-family", "Arial").split(",", 1)[0].strip().strip("'\"") or "Arial"
+        font_family = presentation.get("font-family", "Times New Roman").split(",", 1)[0].strip().strip("'\"") or "Times New Roman"
         source_id = element.get("id") or f"source_atom_{index:06d}"
         return {
             "kind": "text",
@@ -450,6 +449,8 @@ def parse_atom(element: ET.Element, transform: Transform, presentation: dict[str
     cubic_pen = Qu2CuPen(transformed_pen, max_err=0.001, all_cubic=True)
     parse_path(element_path_data(element), cubic_pen)
     subpaths = recording_to_subpaths(recording.value)
+    if not subpaths:
+        return None
     complexity = sum(len(subpath["points"]) for subpath in subpaths)
     source_id = element.get("id") or f"source_atom_{index:06d}"
     return {
@@ -482,7 +483,7 @@ def collect_atoms(root: ET.Element) -> list[dict]:
             child_transform = transform.transform(parse_transform(child.get("transform")))
             if name in ALLOWED_ATOMS:
                 if not child_hidden:
-                    atom = parse_atom(child, child_transform, child_presentation, child_opacity, len(atoms))
+                    atom = parse_atom(numeric_geometry(child,viewport), child_transform, child_presentation, child_opacity, len(atoms))
                     if atom is not None:
                         atoms.append(atom)
             elif name in CONTAINERS:
@@ -495,7 +496,7 @@ def collect_atoms(root: ET.Element) -> list[dict]:
                     before = len(atoms)
                     walk(child, child_presentation, child_opacity, child_transform.transform(placement), child_hidden, child_viewport)
                     if local.get("overflow", child.get("overflow", "hidden")) != "visible":
-                        check_clip(atoms[before:], child_transform, rectangle)
+                        atoms[before:] = clip_atoms(atoms[before:], child_transform, rectangle, recording_to_subpaths)
                 else:
                     walk(child, child_presentation, child_opacity, child_transform, child_hidden, viewport)
             else:
@@ -512,6 +513,9 @@ def collect_atoms(root: ET.Element) -> list[dict]:
     walk(root, inherited, root_opacity, root_transform, root_hidden, tuple(parse_canvas(root)[2:]))
     if not atoms:
         raise ValueError("SVG contains no visible supported vector atoms")
+    for index, atom in enumerate(atoms):
+        atom["index"] = index
+        atom["objectName"] = f"CELL_PPT_CACHE_ATOM_{index:06d}"
     return atoms
 
 
@@ -629,7 +633,7 @@ def prepare(input_svg: Path, output_dir: Path, job_id: str, min_size: int, max_s
         compatible = (
             cache.get("geometry_contract") == "compound-v1"
             and cache.get("schema_version") == 3
-            and cache.get("viewport_contract") == "nested-v1"
+            and cache.get("viewport_contract") == "nested-v2"
             and cache.get("source_sha256") == source_hash
             and cache.get("job_id") == job_id
             and cache.get("min_batch_size") == min_size
@@ -658,7 +662,7 @@ def prepare(input_svg: Path, output_dir: Path, job_id: str, min_size: int, max_s
     cache = {
         "schema_version": 3,
         "geometry_contract": "compound-v1",
-        "viewport_contract": "nested-v1",
+        "viewport_contract": "nested-v2",
         "created_at": utc_now(),
         "source_svg": str(input_svg),
         "source_sha256": source_hash,

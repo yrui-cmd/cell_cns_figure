@@ -51,7 +51,7 @@ def run(command, log):
         raise ClientError('本地转换未完成；保留已收到的 SVG 和日志，不重新付费提交')
 
 
-def convert(directory, *, file_only=False):
+def convert(directory, *, file_only=False, font_family=None):
     directory=Path(directory).resolve()
     with Lock(directory/'conversion.lock'):
         state=read_job(directory)
@@ -66,17 +66,20 @@ def convert(directory, *, file_only=False):
         if svg.resolve()!=directory/'result.svg' or sha(svg.read_bytes())!=state['svg_sha256']:
             raise ClientError('Returned SVG changed')
         validate_svg(svg.read_bytes())
+        selected_font=(font_family or state.get('font_family') or 'Times New Roman').strip()
+        if not selected_font:
+            raise ClientError('Font family cannot be empty')
         scripts=dependency()
         destination=directory/'editable'
         destination.mkdir(exist_ok=True)
-        name=state.get('conversion_name') if state.get('conversion_mode')=='bundled-direct-v4' else None
+        name=state.get('conversion_name') if state.get('conversion_mode')=='bundled-direct-v6' and state.get('conversion_font')==selected_font else None
         if not name:
             name=subprocess.check_output([sys.executable,str(scripts/'allocate_shibielujing_name.py'),'--root',str(destination)],text=True,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0)).strip().splitlines()[-1]
-            update(directory,conversion_name=name,conversion_mode='bundled-direct-v4')
+            update(directory,conversion_name=name,conversion_mode='bundled-direct-v6',font_family=selected_font,conversion_font=selected_font)
         output=destination/name
         from direct_svg import prepare
         mapping_svg=output/(name+'-native.svg')
-        mapping=prepare(svg,mapping_svg,application=state['application'])
+        mapping=prepare(svg,mapping_svg,application=state['application'],font_family=selected_font)
         write(directory/'direct-mapping.json',mapping)
         mapping_sha=sha(mapping_svg.read_bytes())
         log=directory/'conversion.log'
@@ -86,7 +89,7 @@ def convert(directory, *, file_only=False):
             # Reuse a verified native output; do not redraw after a chat interruption.
             native_receipt=directory/'native-output.json'
             old=read(native_receipt) if native_receipt.exists() else {}
-            reusable=old.get('mapping_sha256')==mapping_sha and old.get('conversion_mode')=='bundled-direct-v4' and old.get('svg_sha256')==state['svg_sha256'] and target.is_file() and old.get('native_sha256')==sha(target.read_bytes())
+            reusable=old.get('mapping_sha256')==mapping_sha and old.get('conversion_mode')=='bundled-direct-v6' and old.get('svg_sha256')==state['svg_sha256'] and target.is_file() and old.get('native_sha256')==sha(target.read_bytes())
             if not reusable:
                 route=SKILL/'scripts/run_direct_ppt.py' if state['application']=='ppt' else scripts/'run_illustrator.py'
                 run([sys.executable,'-X','utf8',str(route),'--input-svg',str(mapping_svg),
@@ -115,7 +118,7 @@ def convert(directory, *, file_only=False):
                 preview=output/(name+'.png')
                 if not preview.is_file():raise ClientError('Illustrator PNG preview missing')
                 result['preview']=str(preview)
-            receipt={**result,'svg_sha256':state['svg_sha256'],'conversion_mode':'bundled-direct-v4','mapping_sha256':mapping_sha,'native_sha256':sha(target.read_bytes()),
+            receipt={**result,'svg_sha256':state['svg_sha256'],'conversion_mode':'bundled-direct-v6','mapping_sha256':mapping_sha,'native_sha256':sha(target.read_bytes()),
                      'playback_sha256':sha(Path(result['playback']).read_bytes()) if result.get('playback') else None}
             write(native_receipt,receipt)
             update(directory,conversion='native_ready',deliverables=result,last_error=None)
@@ -134,7 +137,7 @@ def complete(directory, *, visual_checked):
     if not visual_checked or state['conversion']!='native_ready':
         raise ClientError('Native conversion and actual visual verification required')
     result=read(directory/'native-output.json')
-    if state.get('conversion_mode')!='bundled-direct-v4' or result.get('conversion_mode')!='bundled-direct-v4':
+    if state.get('conversion_mode')!='bundled-direct-v6' or result.get('conversion_mode')!='bundled-direct-v6':
         raise ClientError('旧版转换结果需要先重新执行 convert；沿用原 SVG，不重新付费')
     if sha(Path(state['svg']).read_bytes())!=state['svg_sha256'] or result['svg_sha256']!=state['svg_sha256']:
         raise ClientError('Returned SVG changed since conversion')

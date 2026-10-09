@@ -200,7 +200,7 @@
   }
 
   function resolveTextFont(textStyle) {
-    var preferred = textStyle.fontFamily || "Arial";
+    var preferred = textStyle.fontFamily || "Times New Roman";
     try { return app.textFonts.getByName(preferred); } catch (ignoredExactFont) {}
     var preferredLower = preferred.toLowerCase();
     var wantsBold = (textStyle.fontWeight || "").indexOf("bold") >= 0 || parseInt(textStyle.fontWeight, 10) >= 600;

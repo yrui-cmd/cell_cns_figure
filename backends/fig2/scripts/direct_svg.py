@@ -26,7 +26,7 @@ def inline(node):
             node.set(key.strip(),value.strip())
 
 
-def prepare(source, destination, *, application):
+def prepare(source, destination, *, application, font_family="Times New Roman"):
     tree=ET.parse(source);root=tree.getroot()
     for node in root.iter():inline(node)
     definitions={node.get('id'):copy.deepcopy(node) for node in root.iter() if node.get('id')}
@@ -57,6 +57,7 @@ def prepare(source, destination, *, application):
         if application=='ppt' and node.get('fill-rule')=='evenodd':
             node.set('fill-rule','nonzero');counts['ppt_native_compound_fill']+=1
         if tag(node)=='text':
+            node.set('font-family',font_family)
             textpaths=[n for n in node if tag(n)=='textPath']
             if textpaths:
                 # Keep live label content at the source curve anchor and tangent.
@@ -95,12 +96,9 @@ def prepare(source, destination, *, application):
             else:clean(child,chain)
 
     clean(root)
-    # Viewport positioning remains in the patched bundled parser. The direct
-    # mapping policy intentionally does not apply viewport clipping.
+    # Preserve nested viewport boundaries; the bundled parser computes visible paths.
     used_ids=set()
     for index,node in enumerate(root.iter()):
-        if node is not root and tag(node)=='svg':
-            node.set('overflow','visible')
         ident=node.get('id')
         if ident in used_ids:
             replacement_id=f'{ident}__instance_{index}'
@@ -111,6 +109,6 @@ def prepare(source, destination, *, application):
     destination=Path(destination)
     destination.parent.mkdir(parents=True,exist_ok=True)
     tree.write(destination,encoding='utf-8',xml_declaration=True)
-    return {'mode':'bundled-direct-v4','application':application,'source':str(Path(source).resolve()),
+    return {'mode':'bundled-direct-v6','application':application,'font_family':font_family,'source':str(Path(source).resolve()),
             'mapping_svg':str(destination.resolve()),'adjustments':dict(counts),
             'geometry':'Source path coordinates, transforms, order and subpaths retained; no image recognition, tracing or culling.'}

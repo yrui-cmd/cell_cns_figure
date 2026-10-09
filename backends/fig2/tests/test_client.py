@@ -243,7 +243,7 @@ class ClientTests(unittest.TestCase):
         result=pp.convert(self.job,file_only=True)
         self.assertNotEqual(Path(result['native']),original)
         self.assertEqual(original.read_bytes(),b'old-layout-output')
-        self.assertEqual(c.read(self.job/'job.json')['conversion_mode'],'bundled-direct-v4')
+        self.assertEqual(c.read(self.job/'job.json')['conversion_mode'],'bundled-direct-v6')
         self.assertEqual(pp.dependency(),c.SKILL.parents[1]/'native/scripts')
 
     def test_radial_gradient_is_automatically_converted(self):
@@ -258,6 +258,21 @@ class ClientTests(unittest.TestCase):
         from pptx import Presentation
         deck=Presentation(result['native']); shape=deck.slides[0].shapes[0]
         self.assertGreater(shape.left,0);self.assertGreater(shape.top,0)
+
+    def test_default_font_and_user_override_survive_resume(self):
+        from pptx import Presentation
+        self.ready()
+        first=pp.convert(self.job,file_only=True)
+        def fonts(path):
+            return [run.font.name for slide in Presentation(path).slides for shape in slide.shapes
+                    if shape.has_text_frame for para in shape.text_frame.paragraphs for run in para.runs]
+        self.assertEqual(set(fonts(first['native'])),{'Times New Roman'})
+        custom=pp.convert(self.job,file_only=True,font_family='Calibri')
+        self.assertNotEqual(first['native'],custom['native'])
+        self.assertEqual(set(fonts(custom['native'])),{'Calibri'})
+        self.assertEqual(c.read(self.job/'job.json')['font_family'],'Calibri')
+        with patch.object(pp,'run',side_effect=AssertionError('font choice should survive resume')):
+            self.assertEqual(pp.convert(self.job,file_only=True)['native'],custom['native'])
 
     def test_native_ppt_conversion_and_resume(self):
         self.ready()

@@ -1,6 +1,7 @@
 """Nested SVG viewport placement shared by the bundled PPT and AI parsers."""
 import math
 import re
+import copy
 from fontTools.misc.transform import Transform
 
 
@@ -58,18 +59,98 @@ def resolve(element, parent_size):
     return matrix, (vw, vh), (x, y, width, height)
 
 
-def check_clip(atoms, before_viewport, rectangle):
-    """Reject real viewport clipping instead of silently painting outside it.
+def numeric_geometry(element, viewport):
+    """Resolve percentages in the current SVG user viewport, before transforms."""
+    widths = {'x', 'x1', 'x2', 'cx', 'width', 'rx'}
+    heights = {'y', 'y1', 'y2', 'cy', 'height', 'ry'}
+    clone = None
+    for key in widths | heights | {'r'}:
+        value = element.get(key)
+        if not value or '%' not in value:
+            continue
+        reference = viewport[0] if key in widths else viewport[1] if key in heights else math.hypot(*viewport)/math.sqrt(2)
+        if clone is None:
+            clone = copy.deepcopy(element)
+        clone.set(key, str(length(value, reference)))
+    return clone if clone is not None else element
 
-    Checking Bezier control hulls is conservative: uncertain clips are reported,
-    never discarded. Text extents still require the final native visual review.
+
+def path_from_subpaths(subpaths, close_fill=False):
+    import pathops
+    path = pathops.Path()
+    pen = path.getPen()
+    for subpath in subpaths:
+        points = subpath['points']
+        if not points:
+            continue
+        pen.moveTo(tuple(points[0]['a']))
+        for previous, current in zip(points, points[1:]):
+            if previous['r'] == previous['a'] and current['l'] == current['a']:
+                pen.lineTo(tuple(current['a']))
+            else:
+                pen.curveTo(tuple(previous['r']), tuple(current['l']), tuple(current['a']))
+        if subpath['closed']:
+            last, first = points[-1], points[0]
+            if last['r'] != last['a'] or first['l'] != first['a']:
+                pen.curveTo(tuple(last['r']), tuple(first['l']), tuple(first['a']))
+            pen.closePath()
+        elif close_fill:
+            pen.closePath()
+        else:
+            pen.endPath()
+    return path
+
+
+def clip_atoms(atoms, transform, rectangle, to_subpaths):
+    """Calculate visible native paths; never move/resize the original artwork.
+
+    Boolean intersections retain Bézier curves. Strokes that cross a viewport
+    edge are expanded before intersection so no false border is introduced.
     """
-    inverse = before_viewport.inverse()
+    import pathops
+    from fontTools.pens.recordingPen import RecordingPen
+    from fontTools.pens.qu2cuPen import Qu2CuPen
+    inverse = transform.inverse()
     x, y, w, h = rectangle
+    clip = pathops.Path()
+    corners = [transform.transformPoint(p) for p in ((x,y),(x+w,y),(x+w,y+h),(x,y+h))]
+    clip.moveTo(*corners[0])
+    for corner in corners[1:]:
+        clip.lineTo(*corner)
+    clip.close()
+    result = []
+    inverse_scale = max(math.hypot(inverse.xx,inverse.xy),math.hypot(inverse.yx,inverse.yy))
     for atom in atoms:
-        points = [atom['text']['position']] if atom.get('kind') == 'text' else [
-            point[key] for path in atom.get('subpaths', []) for point in path['points'] for key in ('a', 'l', 'r')]
-        for point in points:
-            px, py = inverse.transformPoint(point)
-            if not (x - .001 <= px <= x + w + .001 and y - .001 <= py <= y + h + .001):
-                raise ValueError('Nested SVG viewport clipping requires preprocessing; original SVG retained')
+        if atom['kind'] == 'text':
+            # Keep editable text. Native font extents are checked in the preview.
+            result.append(atom)
+            continue
+        coords = [inverse.transformPoint(p[key]) for s in atom['subpaths'] for p in s['points'] for key in ('a','l','r')]
+        pad = max((p.get('strokeWidth',0)/2 for p in atom['paintParts'] if p.get('stroked')),default=0)*inverse_scale
+        if all(x+pad <= px <= x+w-pad and y+pad <= py <= y+h-pad for px,py in coords):
+            result.append(atom)
+            continue
+        for paint in atom['paintParts']:
+            for kind in ('fill','stroke'):
+                if not paint.get('filled' if kind=='fill' else 'stroked'):
+                    continue
+                path = path_from_subpaths(atom['subpaths'],close_fill=kind=='fill')
+                if kind=='fill':
+                    path.fillType = pathops.FillType.EVEN_ODD if paint.get('fillRule')=='evenodd' else pathops.FillType.WINDING
+                else:
+                    cap={'butt':pathops.LineCap.BUTT_CAP,'round':pathops.LineCap.ROUND_CAP,'square':pathops.LineCap.SQUARE_CAP}[paint.get('strokeCap','butt')]
+                    join={'miter':pathops.LineJoin.MITER_JOIN,'round':pathops.LineJoin.ROUND_JOIN,'bevel':pathops.LineJoin.BEVEL_JOIN}[paint.get('strokeJoin','miter')]
+                    path.stroke(paint['strokeWidth'],cap,join,paint.get('strokeMiterLimit',4))
+                    path.convertConicsToQuads(.001)
+                visible=pathops.op(path,clip,pathops.PathOp.INTERSECTION)
+                if not visible:
+                    continue
+                pen=RecordingPen()
+                visible.draw(Qu2CuPen(pen,max_err=.001,all_cubic=True))
+                paths=to_subpaths(pen.value)
+                if not paths:
+                    continue
+                part=dict(paint,filled=True,stroked=False,fillRule='nonzero',fillColor=paint['fillColor' if kind=='fill' else 'strokeColor'])
+                new=dict(atom,subpaths=paths,paintParts=[part],complexity=sum(len(s['points']) for s in paths),viewport_clipped=True)
+                result.append(new)
+    return result

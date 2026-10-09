@@ -52,10 +52,38 @@ class LayoutTests(unittest.TestCase):
         atoms = self.both('''<svg width="0"><rect width="100" height="100"/></svg><svg display="none"><rect width="100" height="100"/></svg><rect x="500" y="500" width="10" height="10"/>''')
         self.assertEqual(len(atoms), 1)
 
-    def test_real_viewport_clip_is_not_silently_lost(self):
+    def test_real_viewport_clip_is_calculated_without_repositioning(self):
         for builder in (ppt, ai):
-            with self.assertRaisesRegex(ValueError, 'viewport clipping'):
-                builder.collect_atoms(svg('''<svg width="100" height="100" viewBox="0 0 200 100" preserveAspectRatio="xMidYMid slice"><rect width="200" height="100"/></svg>'''))
+            atoms=builder.collect_atoms(svg('''<svg x="200" y="100" width="100" height="100" viewBox="0 0 200 100" preserveAspectRatio="xMidYMid slice"><rect width="200" height="100"/></svg>'''))
+            self.assertEqual(bounds(atoms[0]),(200,100,300,200))
+            self.assertTrue(atoms[0]['viewport_clipped'])
+
+    def test_zero_width_stroke_does_not_create_chemical_background_frame(self):
+        atoms=self.both('''<svg width="234" height="229" stroke="black"><rect width="100%" height="100%" fill="white" fill-opacity="0" stroke-width="0"/><line x1="10" y1="20" x2="40" y2="20"/></svg>''')
+        self.assertEqual(len(atoms),1)
+        self.assertEqual(bounds(atoms[0]),(10,20,40,20))
+
+    def test_percentage_geometry_uses_local_viewport(self):
+        atoms=self.both('''<svg x="200" y="100" width="300" height="200"><rect x="10%" y="25%" width="50%" height="50%"/></svg>''')
+        self.assertEqual(bounds(atoms[0]),(230,150,380,250))
+
+    def test_move_only_path_is_not_an_error(self):
+        atoms=self.both('<path d="M60 21"/><rect width="10" height="10"/>')
+        self.assertEqual(len(atoms),1)
+
+    def test_clipped_stroke_is_an_outline_without_false_edge_line(self):
+        atoms=self.both('''<svg x="100" y="100" width="100" height="100"><path d="M-20 50L120 50" fill="none" stroke="red" stroke-width="10"/></svg>''')
+        self.assertEqual(bounds(atoms[0]),(100,145,200,155))
+        self.assertTrue(atoms[0]['paintParts'][0]['filled'])
+        self.assertFalse(atoms[0]['paintParts'][0]['stroked'])
+
+    def test_open_svg_contour_still_has_native_fill(self):
+        from pptx import Presentation
+        import run_cell_ppt_ooxml as writer
+        atoms=self.both('<path d="M10 10L30 10L20 30" fill="#ff0000"/>')
+        deck=Presentation();slide=deck.slides.add_slide(deck.slide_layouts[6])
+        writer.add_freeform(slide,{'subpaths':atoms[0]['subpaths']},atoms[0]['paintParts'][0],'open-fill',2,(1,0,0,0,0))
+        self.assertEqual(str(slide.shapes[0].fill.fore_color.rgb),'FF0000')
 
     def test_visible_overflow_keeps_geometry(self):
         atoms = self.both('''<svg x="200" width="100" height="100" viewBox="0 0 200 100" overflow="visible" preserveAspectRatio="xMidYMid slice"><rect width="200" height="100"/></svg>''')
