@@ -69,13 +69,16 @@ def convert(directory, *, file_only=False):
         scripts=dependency()
         destination=directory/'editable'
         destination.mkdir(exist_ok=True)
-        name=state.get('conversion_name') if state.get('conversion_mode')=='bundled-native-v2' else None
+        name=state.get('conversion_name') if state.get('conversion_mode')=='bundled-direct-v4' else None
         if not name:
             name=subprocess.check_output([sys.executable,str(scripts/'allocate_shibielujing_name.py'),'--root',str(destination)],text=True,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0)).strip().splitlines()[-1]
-            update(directory,conversion_name=name,conversion_mode='bundled-native-v2')
+            update(directory,conversion_name=name,conversion_mode='bundled-direct-v4')
         output=destination/name
-        mapping_svg=svg  # Immutable original; no destructive effect stripping.
-        mapping_sha=state['svg_sha256']
+        from direct_svg import prepare
+        mapping_svg=output/(name+'-native.svg')
+        mapping=prepare(svg,mapping_svg,application=state['application'])
+        write(directory/'direct-mapping.json',mapping)
+        mapping_sha=sha(mapping_svg.read_bytes())
         log=directory/'conversion.log'
         target=output/(name+('.pptx' if state['application']=='ppt' else '.ai'))
         update(directory,conversion='running')
@@ -83,9 +86,9 @@ def convert(directory, *, file_only=False):
             # Reuse a verified native output; do not redraw after a chat interruption.
             native_receipt=directory/'native-output.json'
             old=read(native_receipt) if native_receipt.exists() else {}
-            reusable=old.get('mapping_sha256')==mapping_sha and old.get('conversion_mode')=='bundled-native-v2' and old.get('svg_sha256')==state['svg_sha256'] and target.is_file() and old.get('native_sha256')==sha(target.read_bytes())
+            reusable=old.get('mapping_sha256')==mapping_sha and old.get('conversion_mode')=='bundled-direct-v4' and old.get('svg_sha256')==state['svg_sha256'] and target.is_file() and old.get('native_sha256')==sha(target.read_bytes())
             if not reusable:
-                route=scripts/'run_from_svg.py' if state['application']=='ppt' else scripts/'run_illustrator.py'
+                route=SKILL/'scripts/run_direct_ppt.py' if state['application']=='ppt' else scripts/'run_illustrator.py'
                 run([sys.executable,'-X','utf8',str(route),'--input-svg',str(mapping_svg),
                      '--output-root',str(destination),'--job-name',name],log)
             if not target.is_file() or target.stat().st_size==0:
@@ -112,7 +115,7 @@ def convert(directory, *, file_only=False):
                 preview=output/(name+'.png')
                 if not preview.is_file():raise ClientError('Illustrator PNG preview missing')
                 result['preview']=str(preview)
-            receipt={**result,'svg_sha256':state['svg_sha256'],'conversion_mode':'bundled-native-v2','mapping_sha256':mapping_sha,'native_sha256':sha(target.read_bytes()),
+            receipt={**result,'svg_sha256':state['svg_sha256'],'conversion_mode':'bundled-direct-v4','mapping_sha256':mapping_sha,'native_sha256':sha(target.read_bytes()),
                      'playback_sha256':sha(Path(result['playback']).read_bytes()) if result.get('playback') else None}
             write(native_receipt,receipt)
             update(directory,conversion='native_ready',deliverables=result,last_error=None)
@@ -131,7 +134,7 @@ def complete(directory, *, visual_checked):
     if not visual_checked or state['conversion']!='native_ready':
         raise ClientError('Native conversion and actual visual verification required')
     result=read(directory/'native-output.json')
-    if state.get('conversion_mode')!='bundled-native-v2' or result.get('conversion_mode')!='bundled-native-v2':
+    if state.get('conversion_mode')!='bundled-direct-v4' or result.get('conversion_mode')!='bundled-direct-v4':
         raise ClientError('旧版转换结果需要先重新执行 convert；沿用原 SVG，不重新付费')
     if sha(Path(state['svg']).read_bytes())!=state['svg_sha256'] or result['svg_sha256']!=state['svg_sha256']:
         raise ClientError('Returned SVG changed since conversion')

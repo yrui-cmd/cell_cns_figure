@@ -47,4 +47,4 @@ description: 合并cell_cns_fig1和cell_cns_fig2的客户绘图入口。使用�
 
 SVG→PPT/AI 的绘制代码、缓存解析和运行脚本固定内置在 `native/scripts`，1号、2号共同使用。运行时不临时调用或要求安装 cell_su7。执行细节见对应分支的 references/postprocess.md。
 
-嵌套素材必须按 x/y、尺寸、viewBox、preserveAspectRatio 和父级变换共同定位；禁止丢失视口坐标造成素材堆在左上角。旧版 direct-path-v1 输出重新转换到新目录，不覆盖旧文件、不重新提交收费订单。生成完成后查看实际预览，核对素材位置、比例、箭头、叠放和文字遮挡再交付。遇到不支持的 SVG 效果要报告，不能删掉效果后假称完成。
+直接按原有路径画入 PPT/AI，位置和大小固定按原 SVG。嵌套素材按 x/y、尺寸、viewBox、preserveAspectRatio 和父级变换共同定位，保留绘制顺序，不重新排版或剔除重叠路径。渐变、裁剪、蒙版、滤镜等效果按直接路径映射规则自动简化，不作为暂停或额外确认条件。原 SVG 保留，旧版本输出沿用原 SVG 本地重转，不重新收费。检查实际生成文件的位置与比例后交付。

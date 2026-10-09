@@ -4,4 +4,4 @@
 
 本地修订：共享 svg_viewport.py 处理嵌套视口，PPT 与 AI 缓存增加 nested-v1 版本；Windows AI 复用当前 Python 并隐藏辅助控制台。后续维护直接修改本目录并执行 native/tests；不得改回同级 Skill 跳转。
 
-限制：未展开的局部裁剪、资源引用、CSS、渐变、滤镜等由校验器报告；复杂文字实际边界仍需软件预览。真实 Illustrator 导出尚未在本轮运行。
+两个分支的 direct_svg.py 生成映射副本，渐变、裁剪等效果不拦截绘制；run_direct_ppt.py 跳过路径剔除，保留原位置和尺寸，不改原 SVG。复杂文字实际边界仍需软件预览。真实 Illustrator 导出尚未在本轮运行。

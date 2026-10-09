@@ -95,10 +95,22 @@ def prepare(source, destination, *, application):
             else:clean(child,chain)
 
     clean(root)
+    # Viewport positioning remains in the patched bundled parser. The direct
+    # mapping policy intentionally does not apply viewport clipping.
+    used_ids=set()
+    for index,node in enumerate(root.iter()):
+        if node is not root and tag(node)=='svg':
+            node.set('overflow','visible')
+        ident=node.get('id')
+        if ident in used_ids:
+            replacement_id=f'{ident}__instance_{index}'
+            while replacement_id in used_ids:replacement_id+='x'
+            node.set('id',replacement_id)
+        if node.get('id'):used_ids.add(node.get('id'))
     ET.register_namespace('',NS)
     destination=Path(destination)
     destination.parent.mkdir(parents=True,exist_ok=True)
     tree.write(destination,encoding='utf-8',xml_declaration=True)
-    return {'mode':'direct-path-v1','application':application,'source':str(Path(source).resolve()),
+    return {'mode':'bundled-direct-v4','application':application,'source':str(Path(source).resolve()),
             'mapping_svg':str(destination.resolve()),'adjustments':dict(counts),
             'geometry':'Source path coordinates, transforms, order and subpaths retained; no image recognition, tracing or culling.'}

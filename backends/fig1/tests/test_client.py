@@ -209,8 +209,21 @@ class ClientTests(unittest.TestCase):
         result=pp.convert(self.job,file_only=True)
         self.assertNotEqual(Path(result['native']),original)
         self.assertEqual(original.read_bytes(),b'old-layout-output')
-        self.assertEqual(c.read(self.job/'job.json')['conversion_mode'],'bundled-native-v2')
+        self.assertEqual(c.read(self.job/'job.json')['conversion_mode'],'bundled-direct-v4')
         self.assertEqual(pp.dependency(),c.SKILL.parents[1]/'native/scripts')
+
+    def test_radial_gradient_is_automatically_converted(self):
+        self.ready()
+        source=self.job/'result.svg'
+        data=b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600"><defs><radialGradient id="g"><stop stop-color="#336699"/><stop offset="1" stop-color="#ffffff"/></radialGradient></defs><svg x="300" y="200" width="100" height="100" viewBox="0 0 10 10"><rect width="10" height="10" fill="url(#g)"/></svg></svg>'
+        source.write_bytes(data);c.update(self.job,svg_sha256=c.sha(data))
+        result=pp.convert(self.job,file_only=True)
+        self.assertTrue(Path(result['native']).is_file())
+        self.assertEqual(source.read_bytes(),data)
+        self.assertEqual(c.read(self.job/'direct-mapping.json')['adjustments']['gradient_to_first_stop'],1)
+        from pptx import Presentation
+        deck=Presentation(result['native']); shape=deck.slides[0].shapes[0]
+        self.assertGreater(shape.left,0);self.assertGreater(shape.top,0)
 
     def test_native_ppt_conversion_and_resume(self):
         self.ready()
