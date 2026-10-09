@@ -357,7 +357,7 @@ def poll_once(directory, api=None):
     validate_svg(output.read_bytes())
     # Result is durable before notification; balance lookup failure never discards it.
     return update(directory,state='ready',svg=str(output),svg_sha256=expected,
-                  remote_status='completed',last_error=None)
+                  remote_status='completed',result_received_at=time.time(),last_error=None)
 
 
 def wake_prompt(directory, state):
@@ -473,6 +473,12 @@ def recover(registry=LOCAL):
         try:
             s = read(Path(item)/'job.json')
             if s['state'] in WAITING or s['state']=='attention' and s['wake_state']=='pending':
+                if (Path(item)/'progress-panel.json').exists():
+                    try:
+                        from progress_panel import start
+                        start(item)
+                    except Exception:
+                        pass  # A display failure must never block result recovery.
                 start_waiter(item); started+=1
         except (OSError,ValueError,ClientError):
             continue
@@ -522,7 +528,7 @@ def main():
     q.add_argument('--credits-approved',type=int,required=True)
     q.add_argument('--authorize-wake',action='store_true',required=True)
     q.add_argument('--job-dir',type=Path,required=True)
-    for name in ('status','wait','resume','stop','acknowledge','convert','complete'):
+    for name in ('status','wait','resume','stop','acknowledge','convert','complete','progress'):
         q=commands.add_parser(name);q.add_argument('--job-dir',type=Path,required=True)
         if name=='acknowledge':q.add_argument('--nonce',required=True)
         if name=='convert':q.add_argument('--file-only',action='store_true')
@@ -562,6 +568,14 @@ def main():
             finally: start_waiter(args.job_dir)
             result=public(state)
             result['background_waiter_verified']=check_waiter(args.job_dir)
+            try:
+                from progress_panel import start
+                result['progress_url']=start(args.job_dir)
+            except Exception:
+                result['progress_error']='本地进度面板未启动，任务仍在后台接收；可运行 progress 重试'
+        elif args.command=='progress':
+            from progress_panel import start
+            result={'progress_url':start(args.job_dir)}
         elif args.command=='status':
             result=public(read(args.job_dir/'job.json'))
             if (args.job_dir/'waiter.json').exists():result['waiter']=read(args.job_dir/'waiter.json')

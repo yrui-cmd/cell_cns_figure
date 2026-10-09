@@ -21,6 +21,8 @@
 2. 核对选择与20额度授权，运行`client.py probe`确认桌面原聊天可达。先执行`discover-key`本地检测已有 API Key，再用`balance`查看实时余额。已有配置直接复用，只有明确未找到时才问“请提供小描 API Key。”；用户可在聊天提供，通过stdin交给`configure-key`，不复述或写到命令行。凭据只存当前Windows用户DPAPI密文；本机已有客户凭据可直接使用，不替换账号。
 3. 显示“正在第2步。”，执行`submit --application ppt|ai --job-dir ... --credits-approved 20 --authorize-wake`，有图加`--image`，有文字加`--text-file`，至少提供一项。调用者传入当前真实thread-id。启用本Skill处理该任务包含用户要求的“结果返回后通知原聊天继续处理”授权；不得扩大到别的聊天。
 4. 脚本持久化原图与请求ID，注册登录/崩溃恢复，提交后自动启动独立Python等待进程。确认返回`charged_credits=20`且`background_waiter_verified=true`；仅回复“正在第3步。”并结束本轮。
+提交后使用返回的`progress_url`调用`open_in_codex`，在当前聊天右侧打开本地进度面板（browser目标）。面板按1小时预估自动推进，结果未保存校验前最多99%；接收器已保存并校验SVG才到100%。等待期间结束模型轮次，让后台Python继续；不要为更新进度反复调用模型、发送聊天消息或轮询网站。面板未启动时仅运行`client.py progress --job-dir <原目录>`恢复，不重新提交订单。
+
 5. 响应丢失只恢复原目录、原请求ID；不能换目录重新提交、重复付费。接收进程在后台检查原任务，收到SVG后下载、校验并保留，再通过桌面工具通知原聊天。原聊天正忙则等待空闲。
 
 仅创建/更新/安装本Skill时不上传图片、不查询客户业务余额、不创建付费测试订单。可以做隔离本地测试和只读桌面连接检查。

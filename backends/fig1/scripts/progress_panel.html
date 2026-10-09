@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>任务进度</title>
+<style>
+:root{color-scheme:light dark;font-family:system-ui,"Microsoft YaHei",sans-serif;background:light-dark(#f7f8fa,#18191c);color:light-dark(#23272f,#ecedf0)}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px}.panel{width:100%;max-width:480px}.row{display:flex;align-items:baseline;justify-content:space-between;gap:20px}h1{font-size:20px;font-weight:500;margin:0}#value{font-size:30px;font-variant-numeric:tabular-nums}.track{height:10px;border-radius:6px;background:light-dark(#e1e5eb,#34383f);margin:22px 0 16px;overflow:hidden}.fill{height:100%;width:0;background:light-dark(#3376d8,#83b1ff);transition:width 1s linear;border-radius:6px}.hint{font-size:13px;color:light-dark(#687181,#afb6c1);line-height:1.6;margin:6px 0}.meta{display:flex;gap:16px;justify-content:space-between;flex-wrap:wrap}#demo{color:light-dark(#946208,#edc471)}[hidden]{display:none!important}@media(prefers-reduced-motion:reduce){.fill{transition:none}}
+</style></head><body><main class="panel">
+<p id="demo" class="hint" hidden>演示任务 · 未提交订单</p>
+<div class="row"><h1 id="label">正在连接本地接收器</h1><span id="value">—</span></div>
+<div class="track" role="progressbar" aria-label="预计任务进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="fill" id="fill"></div></div>
+<div class="meta hint"><span id="estimate">预计 1 小时</span><span id="elapsed">已等待 00:00</span></div>
+<p class="hint" id="note">收到结果后完成</p>
+</main><script>
+'use strict';
+const $=id=>document.getElementById(id);
+let state=null,receivedAt=0,disconnected=false;
+function render(){
+ if(!state)return;
+ const elapsed=state.elapsed+(!state.complete&&!state.paused&&!disconnected?(performance.now()-receivedAt)/1000:0);
+ const percent=state.complete?100:Math.min(99,Math.floor(elapsed/state.estimate*100));
+ $('value').textContent=percent+'%';$('fill').style.width=percent+'%';document.querySelector('[role="progressbar"]').setAttribute('aria-valuenow',percent);
+ $('label').textContent=disconnected?'正在重连本地接收器':state.complete?'结果已接收':state.paused?state.label:elapsed>=state.estimate?'等待结果返回':'正在处理';
+ $('elapsed').textContent='已等待 '+String(Math.floor(elapsed/60)).padStart(2,'0')+':'+String(Math.floor(elapsed%60)).padStart(2,'0');
+ $('note').textContent=state.complete?'已接收，原聊天继续处理':elapsed>=state.estimate?'已超出预计时间，继续等待结果':'预估进度 · 收到结果后完成';
+ $('demo').hidden=!state.demo;
+}
+async function sync(){
+ try{const response=await fetch('status',{cache:'no-store',signal:AbortSignal.timeout(4000)});if(!response.ok)throw Error();state=await response.json();receivedAt=performance.now();disconnected=false;render();}
+ catch{disconnected=true;if(!state)$('label').textContent='正在重连本地接收器';render();}
+ finally{setTimeout(sync,2000);}
+}
+setInterval(render,1000);sync();
+</script></body></html>
