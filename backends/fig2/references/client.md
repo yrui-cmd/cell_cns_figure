@@ -22,7 +22,7 @@ python -X utf8 '<SKILL>/scripts/client.py' stop --job-dir '<原任务目录>'
 
 可在用户指定输出位置或当前聊天工作目录建立任务文件夹；不要把客户端任务塞入服务器的待处理目录。原图、文字、job.json、result.svg、转换文件都保存在该独立目录。相同job-dir重试必须匹配原图/文字哈希、应用和聊天身份；不匹配直接拒绝。
 
-提交前可运行 `setup-waiter`，只注册`CellCnsFig2_Client_Recovery`恢复任务，不提交订单。submit也会自动检查/注册它。每个任务一个独立Python进程，OS文件锁保证不会重复处理；恢复器每分钟及Windows登录后检查已登记的任务，必要时重启等待进程。它不创建新订单或新聊天。用户stop状态优先。
+提交前可运行 `setup-waiter`，注册并启动无窗口常驻恢复监控，对应`CellCnsFig2_Client_Recovery`恢复任务，不提交订单。submit也会自动检查/注册它。每个任务一个独立Python进程，OS文件锁保证不会重复处理；登录任务直接启动无窗口`pythonw.exe recovery_monitor.py`，由该常驻Python进程每30秒检查已登记任务，必要时恢复退出的接收进程；已持有文件锁的接收进程保持运行。不使用每分钟PowerShell触发器，不反复打开控制台。它不创建新订单或新聊天。用户stop状态优先。
 
 ## 已固定的协议
 

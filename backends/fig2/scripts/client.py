@@ -473,7 +473,7 @@ def start_waiter(directory):
     exe = Path(sys.executable)
     if os.name=='nt' and exe.with_name('pythonw.exe').exists():
         exe = exe.with_name('pythonw.exe')
-    options = {'creationflags':subprocess.DETACHED_PROCESS|subprocess.CREATE_NEW_PROCESS_GROUP} if os.name=='nt' else {'start_new_session':True}
+    options = {'creationflags':subprocess.CREATE_NO_WINDOW|subprocess.CREATE_NEW_PROCESS_GROUP} if os.name=='nt' else {'start_new_session':True}
     with (directory/'waiter.log').open('ab') as log:
         proc = subprocess.Popen([str(exe),'-X','utf8',str(Path(__file__).resolve()),'wait','--job-dir',str(directory)],
                                 stdin=subprocess.DEVNULL,stdout=log,stderr=log,close_fds=True,**options)

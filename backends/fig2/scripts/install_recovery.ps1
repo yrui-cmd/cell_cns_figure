@@ -1,13 +1,18 @@
 param([Parameter(Mandatory=$true)][string]$Python)
 $ErrorActionPreference='Stop'
 $pythonPath=(Resolve-Path -LiteralPath $Python).Path
-$recoveryScript=Join-Path $PSScriptRoot 'recover.ps1'
+$pythonWindowless=Join-Path (Split-Path -Parent $pythonPath) 'pythonw.exe'
+if (-not (Test-Path -LiteralPath $pythonWindowless -PathType Leaf)) {
+    throw 'pythonw.exe is required for windowless resident monitoring.'
+}
+$monitorScript=Join-Path $PSScriptRoot 'recovery_monitor.py'
 $user=[Security.Principal.WindowsIdentity]::GetCurrent().Name
-$shellPath=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
-$argsLine='-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "'+$recoveryScript+'" -Python "'+$pythonPath+'"'
-$action=New-ScheduledTaskAction -Execute $shellPath -Argument $argsLine
+$argsLine='-X utf8 "'+$monitorScript+'"'
+$action=New-ScheduledTaskAction -Execute $pythonWindowless -Argument $argsLine
 $login=New-ScheduledTaskTrigger -AtLogOn -User $user
-$retry=New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(1)) -RepetitionInterval (New-TimeSpan -Minutes 1)
 $principal=New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
-$settings=New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 2)
-Register-ScheduledTask -TaskName 'CellCnsFig2_Client_Recovery' -Action $action -Trigger @($login,$retry) -Principal $principal -Settings $settings -Description 'Restarts explicitly submitted cell_cns_fig2 Python receivers; no new paid submissions or new chats.' -Force | Out-Null
+$settings=New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+$taskName='CellCnsFig2_Client_Recovery'
+# Replaces the former every-minute PowerShell trigger; waiting workers remain untouched.
+Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $login -Principal $principal -Settings $settings -Description 'Resident windowless Python monitor for existing figure orders; no periodic console launches.' -Force | Out-Null
+Start-ScheduledTask -TaskName $taskName
