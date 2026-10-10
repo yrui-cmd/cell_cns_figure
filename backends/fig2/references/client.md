@@ -27,7 +27,7 @@ python -X utf8 '<SKILL>/scripts/client.py' stop --job-dir '<原任务目录>'
 ## 已固定的协议
 
 - GET /api/figure_pro/me：实时可用余额、账号身份和credits_per_task。
-- POST /api/figure_pro/jobs：固定45额度，携带持久request_id、可选image.base64与text，至少一个有效输入。
+- POST /api/figure_pro/jobs：固定45额度，携带持久request_id、一次性invite_code、可选image.base64与text，至少一个有效输入。
 - GET /api/figure_pro/jobs/{job_id}：查询同一任务。
 - GET /api/figure_pro/jobs/{job_id}/result：下载SVG。
 
@@ -56,3 +56,5 @@ python -X utf8 '<SKILL>/scripts/client.py' stop --job-dir '<原任务目录>'
 共享配置格式沿用小描配置工具的 `API_Key="..."`。不复制明文、不覆盖已有配置；显式文件或优先配置损坏时报告错误，不悄悄换账户。发现多个不同备选密钥时只问使用哪个文件，不要求重新发送密钥。
 
 `balance` 和新 `submit` 自动使用同一检测规则。已有订单保持任务中记录的凭据路径与账户身份，恢复时不重新发现或切换账号。本地可读取不代表远端仍有效，正常提交前仍使用原有余额与身份校验；鉴权失败或网络故障不当作配置不存在。
+
+邀请码：新任务 submit 加 `--invite-stdin` 从标准输入读取；仍扣45额度。未受理任务可在原聊天执行 `set-invite --job-dir ...` 从标准输入补码，再 resume 原任务。邀请码仅在成功接单时消耗；重试同一请求不重复消耗，不创建新任务。

@@ -211,7 +211,7 @@ def inspect_image(path):
 
 
 def prepare(directory, *, image, text='', application, thread_id, credential_file,
-            credits_approved, wake_authorized, api=None, registry=LOCAL, font_family=None):
+            credits_approved, wake_authorized, api=None, registry=LOCAL, font_family=None, invite_code=None):
     if credits_approved != PRICE or not wake_authorized:
         raise ClientError('Need 45-credit approval and original-chat wake authorization')
     if application not in ('ppt','ai'):
@@ -237,6 +237,10 @@ def prepare(directory, *, image, text='', application, thread_id, credential_fil
             return old
         api = api or API(credential_file)
         me = api.me()
+        if me.get('invite_required') and not invite_code:
+            raise ClientError('每个新任务需要一个一次性邀请码，验证后仍扣45额度')
+        from invite import encrypt
+        invite_ciphertext = encrypt(invite_code) if invite_code else None
         if me['credits_available'] < PRICE:
             raise ClientError('可用额度不足 45，不提交')
         original = directory/('input'+ext) if image else None
@@ -244,7 +248,7 @@ def prepare(directory, *, image, text='', application, thread_id, credential_fil
             original.write_bytes(data)
         (directory/'requirements.txt').write_text(text, encoding='utf-8')
         state = {'version':1,'service':PREFIX,'state':'submitting','request_id':uuid.uuid4().hex,
-                 'job_id':None,'fingerprint':fingerprint,'image':str(original) if original else None,'image_sha256':sha(data),
+                 'job_id':None,'invite_ciphertext':invite_ciphertext,'fingerprint':fingerprint,'image':str(original) if original else None,'image_sha256':sha(data),
                  'text_sha256':sha(text.encode()),'application':application,'thread_id':thread_id,
                  'font_family':font_family or 'Times New Roman',
                  'credential_file':str(Path(credential_file).resolve()),'account_id':me['id'],
@@ -272,8 +276,9 @@ def submit_existing(directory, api=None):
         text = (directory/'requirements.txt').read_text(encoding='utf-8')
         if sha(data) != state['image_sha256'] or sha(text.encode()) != state['text_sha256']:
             raise ClientError('Saved inputs changed; refusing paid submission')
+        from invite import decrypt
         try:
-            result = api.submit({'request_id':state['request_id'],'text':text,
+            result = api.submit({'request_id':state['request_id'],'text':text,'invite_code':decrypt(state),
                                  'image':{'name':Path(state['image']).name,'base64':base64.b64encode(data).decode()} if state.get('image') else None})
         except Exception as e:
             state['state'] = 'attention' if isinstance(e,ApiError) and e.status in (400,401,402,403,409,413) else 'submit_unknown'
@@ -542,6 +547,7 @@ def main():
     q.add_argument('--credential-file',type=Path)
     q.add_argument('--credits-approved',type=int,required=True)
     q.add_argument('--authorize-wake',action='store_true',required=True)
+    q.add_argument('--invite-stdin',action='store_true',help='Read the one-use permit from stdin; it still costs 45 credits')
     q.add_argument('--font',dest='font_family',help='User-requested output font; default Times New Roman')
     q.add_argument('--job-dir',type=Path,required=True)
     for name in ('status','wait','resume','stop','acknowledge','convert','complete','progress'):
@@ -551,6 +557,7 @@ def main():
             q.add_argument('--file-only',action='store_true')
             q.add_argument('--font',dest='font_family',help='Override the saved output font')
         if name=='complete':q.add_argument('--visual-checked',action='store_true',required=True)
+    q=commands.add_parser('set-invite');q.add_argument('--job-dir',type=Path,required=True)
     commands.add_parser('recover')
     commands.add_parser('probe')
     commands.add_parser('setup-waiter')
@@ -582,7 +589,8 @@ def main():
             install_recovery()
             state=prepare(args.job_dir,image=args.image,text=text,
                 application=args.application,thread_id=args.thread_id,credential_file=args.credential_file,
-                credits_approved=args.credits_approved,wake_authorized=args.authorize_wake,font_family=args.font_family)
+                credits_approved=args.credits_approved,wake_authorized=args.authorize_wake,font_family=args.font_family,
+                invite_code=sys.stdin.readline().strip() if args.invite_stdin else None)
             register(args.job_dir)
             try: state=submit_existing(args.job_dir)
             finally: start_waiter(args.job_dir)
@@ -610,6 +618,15 @@ def main():
         elif args.command in ('convert','complete'):
             from postprocess import convert, complete
             result=convert(args.job_dir,file_only=args.file_only,font_family=args.font_family) if args.command=='convert' else complete(args.job_dir,visual_checked=args.visual_checked)
+        elif args.command=='set-invite':
+            from invite import encrypt
+            with Lock(args.job_dir/'state.lock',35):
+                state=read_job(args.job_dir)
+                if os.environ.get('CODEX_THREAD_ID') != state['thread_id'] or state.get('job_id'):
+                    raise ClientError('只能由原聊天为尚未取得订单号的原任务补充邀请码')
+                state.update(invite_ciphertext=encrypt(sys.stdin.readline().strip()),state='submit_unknown',last_error=None)
+                write(args.job_dir/'job.json',state)
+            result={'invite_saved':True,'request_id':state['request_id'],'charged':False}
         elif args.command=='recover':result=recover()
         elif args.command=='setup-waiter':
             install_recovery();result={'recovery_installed':True}
