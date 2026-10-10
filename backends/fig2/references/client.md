@@ -10,11 +10,13 @@
 python -X utf8 '<SKILL>/scripts/client.py' probe
 python -X utf8 '<SKILL>/scripts/client.py' discover-key
 python -X utf8 '<SKILL>/scripts/client.py' balance
-python -X utf8 '<SKILL>/scripts/client.py' submit --image '<原图.png>' --text-file '<可选文字.txt>' --application ppt --thread-id '<当前CODEX_THREAD_ID>' --job-dir '<独立任务目录>' --credits-approved 45 --authorize-wake
+python -X utf8 '<SKILL>/scripts/client.py' submit --image '<原图.png>' --text-file '<可选文字.txt>' --application ppt --thread-id '<当前CODEX_THREAD_ID>' --job-dir '<独立任务目录>' --credits-approved 45 --authorize-wake --invite-stdin
 python -X utf8 '<SKILL>/scripts/client.py' status --job-dir '<原任务目录>'
 python -X utf8 '<SKILL>/scripts/client.py' resume --job-dir '<原任务目录>'
 python -X utf8 '<SKILL>/scripts/client.py' stop --job-dir '<原任务目录>'
 ```
+
+`--invite-stdin` 从进程标准输入读取一行邀请码；支持 `Cell_Pro` 后6–32位字母或数字，兼容旧码。实际邀请码不写进命令参数、临时脚本或日志。
 
 没有文字就省略--text-file，没有图片就省略--image；不要填占位内容。默认凭据为当前用户`LocalAppData/Xiaomiao/figure_pro-customer.txt`，DPAPI密文。需要为另一个客户配置时用明确的凭据文件，不覆盖其他账户。`configure-key`从stdin读取一行客户密钥，并排他创建密文文件；从不接受命令行明文密钥。
 
@@ -58,3 +60,5 @@ python -X utf8 '<SKILL>/scripts/client.py' stop --job-dir '<原任务目录>'
 `balance` 和新 `submit` 自动使用同一检测规则。已有订单保持任务中记录的凭据路径与账户身份，恢复时不重新发现或切换账号。本地可读取不代表远端仍有效，正常提交前仍使用原有余额与身份校验；鉴权失败或网络故障不当作配置不存在。
 
 邀请码：新任务 submit 加 `--invite-stdin` 从标准输入读取；仍扣45额度。未受理任务可在原聊天执行 `set-invite --job-dir ...` 从标准输入补码，再 resume 原任务。有效码提交一次即失效，余额不足也失效；余额不足不扣费、不创建任务，再提交需新码。已受理订单重试不重复扣费。
+
+402表示余额不足且本次有效邀请码已经失效，不扣费、不创建任务；停止自动提交。用户提供新码并授权继续后，在原聊天用 `set-invite --job-dir <原目录>` 从stdin换码，再 `resume`。不得在客户skill里使用管理员工具生成邀请码。
