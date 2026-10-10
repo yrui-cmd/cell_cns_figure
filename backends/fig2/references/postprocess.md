@@ -4,7 +4,7 @@
 
 先读取原目录job.json；原聊天执行acknowledge确认nonce后，运行 `client.py export --job-dir <原目录>`。实际查看SVG，确认位置、比例、文字和箭头正常，再用 `complete --visual-checked` 完成。结构校验不能替代实际预览。
 
-默认直接交付返回的svg文件链接，无需安装Office或Illustrator。只有用户选择Adobe导入（application=ai）时才执行 `client.py import-illustrator --job-dir <原目录>`。Windows通过Illustrator的文档打开功能直接打开SVG，不逐路径重绘、不要求预建空白文档、不向已有文档粘贴内容。重复导入同一已打开文件时复用该文档。
+默认直接交付返回的svg文件链接，无需安装Office或Illustrator。只有用户选择Adobe导入（application=ai）时才执行 `client.py import-illustrator --job-dir <原目录>`。Windows通过Illustrator的文档打开功能导入SVG，不逐路径重绘、不要求预建空白文档、不向已有文档粘贴内容。仅导入副本将marker箭头按原切线、坐标和尺寸展开为普通矢量，避免Illustrator吞掉曲线主体；默认返回的SVG与原件保持不变。重复导入同一已打开文件时复用该文档。导入期间暂时关闭格式通知弹窗，结束后恢复原设置；必须查看命令返回的实际Illustrator PNG预览，核对箭头、裁剪、文字、比例与位置后才完成，不能只凭opened回执判定效果正确。
 
 Illustrator未安装、启动失败或打开失败时，SVG仍可交付供手动打开；如实说明未完成自动导入，保留原任务和SVG，恢复后重试原目录。不会创建新收费订单，也不把SVG改名为AI冒充原生AI文件。
 

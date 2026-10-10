@@ -55,7 +55,7 @@ description: 合并cell_cns_fig1和cell_cns_fig2的客户绘图入口。使用�
 
 1. 接收并校验原SVG后执行 `client.py export --job-dir <原目录>`。交付副本只设置默认或指定字体，完整保留路径、坐标、大小、变换、分层顺序、渐变、裁剪和箭头；不重新描摹、栅格化或重新排版。
 2. 检查实际SVG预览中的位置、比例、文字与箭头。不要将结构校验说成视觉验收；无法预览时如实说明。
-3. 默认直接返回导出的SVG链接。用户已选Adobe时执行 `client.py import-illustrator --job-dir <原目录>`，将SVG作为独立文档打开，不改动已有文档；不需要先建空白文档。只有命令确认成功才报告已导入。
+3. 默认直接返回导出的SVG链接。用户已选Adobe时执行 `client.py import-illustrator --job-dir <原目录>`，将SVG作为独立文档打开，不改动已有文档；不需要先建空白文档。导入副本会将marker箭头按原坐标展开为普通矢量，保留曲线本体、渐变与裁剪。命令返回实际Illustrator预览路径，检查该预览后才报告导入效果正常。
 4. 验收后执行 `client.py complete --job-dir <原目录> --visual-checked` 并返回SVG链接。导入失败时仍提供已保存SVG，说明可手动在Illustrator中打开，保留原任务供恢复，不重新付费。
 
 旧任务中的application=ppt仅用于读取历史记录，直接返回SVG；旧convert命令只作为export的兼容别名，不执行桌面转换。不得把SVG改后缀伪装为AI文件，也不要求为直接获取SVG安装Office或Illustrator。

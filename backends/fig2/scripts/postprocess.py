@@ -107,11 +107,28 @@ def import_illustrator(directory):
             raise c.ClientError('Illustrator import was not selected for this task')
         if os.name != 'nt':
             raise c.ClientError('Automatic Illustrator import requires Windows; the SVG is ready')
+        from illustrator_svg import expand
+        try:
+            data, marker_count = expand(Path(receipt['svg']).read_bytes())
+        except (ValueError, KeyError, TypeError) as exc:
+            raise c.ClientError('Illustrator marker preparation failed; original SVG is preserved: ' + str(exc)) from exc
+        c.validate_svg(data)
+        imported_svg = Path(receipt['svg'])
+        if marker_count:
+            imported_svg = directory/'deliverables'/('illustrator-' + c.sha(data)[:12] + '.svg')
+            if not imported_svg.is_file() or imported_svg.read_bytes() != data:
+                temp = imported_svg.with_name(imported_svg.name+'.'+uuid.uuid4().hex+'.tmp')
+                try:
+                    with temp.open('xb') as f:
+                        f.write(data); f.flush(); os.fsync(f.fileno())
+                    os.replace(temp, imported_svg)
+                finally:
+                    temp.unlink(missing_ok=True)
         script = Path(__file__).with_name('import_illustrator.ps1')
         try:
             process = subprocess.run(
                 ['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-                 '-File', str(script), '-SvgPath', receipt['svg']],
+                 '-File', str(script), '-SvgPath', str(imported_svg)],
                 capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120,
                 creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         except (OSError, subprocess.TimeoutExpired) as exc:
@@ -122,9 +139,10 @@ def import_illustrator(directory):
             result = json.loads(process.stdout.strip())
         except ValueError:
             raise c.ClientError('Illustrator import could not be confirmed; SVG is preserved') from None
-        if not result.get('opened') or Path(result.get('path', '')).resolve() != Path(receipt['svg']).resolve():
+        if not result.get('opened') or Path(result.get('path', '')).resolve() != imported_svg.resolve():
             raise c.ClientError('Illustrator import receipt mismatch')
-        c.write(directory/'illustrator-import.json', {**result, 'svg_sha256': receipt['sha256']})
+        result['expanded_markers'] = marker_count
+        c.write(directory/'illustrator-import.json', {**result, 'svg_sha256': receipt['sha256'], 'import_sha256': c.sha(data)})
         return {**result, 'svg': receipt['svg']}
 
 

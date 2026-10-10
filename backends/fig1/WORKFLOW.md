@@ -35,7 +35,7 @@
 3. SVG有效时执行 `client.py export --job-dir ...`，保留原件并生成可直接打开的SVG交付副本。详见 [SVG交付与导入](references/postprocess.md)。
 4. 查看SVG实际预览，检查位置、比例、裁剪、箭头和文字；保留原图中的可编辑路径与效果，不执行PPTX转换或逐路径重绘。
 5. 仅用户选定Adobe Illustrator导入（application=ai）时执行 `client.py import-illustrator --job-dir ...`；打开SVG独立文档，不修改已有文档。无法导入时提供SVG和实际原因，保留任务供恢复，不重新收费。
-6. 验收完成且用户要求的导入已成功时执行 `client.py complete --job-dir ... --visual-checked`。最终返回SVG链接，并追加入口规定的结尾提示。
+6. 导入后查看命令返回的实际Illustrator预览；验收完成且用户要求的导入已成功时执行 `client.py complete --job-dir ... --visual-checked`。最终返回SVG链接，并追加入口规定的结尾提示。
 
 ## 恢复边界
 
