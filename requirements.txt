@@ -1,7 +1,1 @@
 Pillow>=10,<13
-python-pptx==1.0.2
-fonttools==4.61.1
-shapely==2.1.2
-lxml>=4.9,<7
-svgpathtools>=1.6,<2
-skia-pathops>=0.9.2,<1

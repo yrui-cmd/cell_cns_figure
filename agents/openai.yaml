@@ -1,4 +1,4 @@
 interface:
   display_name: "cell_cns_figure"
-  short_description: "科研绘图统一入口：日常选1，20额度；高嵌套文件选2，45额度，更注重美观"
+  short_description: "科研绘图统一入口：返回可编辑SVG，也可选择导入Adobe Illustrator"
   default_prompt: "使用 $cell_cns_figure 处理这份文字或图片，先让我选择1号或2号。"

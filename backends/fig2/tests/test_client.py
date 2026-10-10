@@ -50,7 +50,7 @@ class ClientTests(unittest.TestCase):
     def tearDown(self):
         self.env.stop();self.temp.cleanup()
     def prepare(self,**kw):
-        args=dict(image=self.img,text='',application='ppt',thread_id=THREAD,credential_file=self.root/'never-read.key',
+        args=dict(image=self.img,text='',application='svg',thread_id=THREAD,credential_file=self.root/'never-read.key',
                   credits_approved=45,wake_authorized=True,api=self.api,registry=self.root/'registry')
         args.update(kw);return c.prepare(self.job,**args)
     def ready(self):
@@ -107,7 +107,7 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(len(self.api.jobs),1)
     def test_cli_empty_input_does_not_register_recovery(self):
         import contextlib,io
-        args=['client.py','submit','--application','ppt','--job-dir',str(self.job),
+        args=['client.py','submit','--application','svg','--job-dir',str(self.job),
               '--credits-approved','45','--authorize-wake']
         with patch.object(sys,'argv',args),patch.object(c,'install_recovery') as install, \
              patch.object(c,'API') as api,contextlib.redirect_stdout(io.StringIO()):
@@ -144,7 +144,7 @@ class ClientTests(unittest.TestCase):
     def test_resume_stopped_conversion_uses_saved_svg(self):
         self.ready();c.update(self.job,state='stopped',before_stop='received')
         with patch.object(c,'start_waiter') as start:
-            self.assertEqual(c.resume_job(self.job)['next_action'],'convert_existing_svg')
+            self.assertEqual(c.resume_job(self.job)['next_action'],'export_existing_svg')
         start.assert_not_called()
         self.assertEqual(c.read_job(self.job)['state'],'received')
     def test_text_optional_and_insufficient_balance(self):
@@ -218,10 +218,6 @@ class ClientTests(unittest.TestCase):
         result=subprocess.run([sys.executable,'-X','utf8',str(c.SKILL/'scripts/client.py'),'convert','--job-dir',str(self.job)],capture_output=True,text=True,encoding='utf-8')
         self.assertEqual(result.returncode,1)
         self.assertIn('Task is stopped',json.loads(result.stdout)['error'])
-    def test_unsupported_clip_keeps_actionable_failure(self):
-        code='print("ERROR|Only redundant full-canvas clipping can be removed automatically");raise SystemExit(1)'
-        with self.assertRaisesRegex(c.ClientError,'局部裁剪'):
-            pp.run([sys.executable,'-c',code],self.root/'clip-test.log')
     def test_waiter_single_instance_and_recovery(self):
         self.prepare()
         with c.Lock(self.job/'waiter.lock'):
@@ -233,59 +229,88 @@ class ClientTests(unittest.TestCase):
         with patch.object(c,'poll_once',side_effect=lambda directory:c.update(directory,state='stopped')),patch.object(c.time,'sleep'):
             c.wait(self.job)
         self.assertEqual(c.read(self.job/'waiter.json')['pid'],os.getpid())
-    def test_old_conversion_gets_new_output_and_preserves_original(self):
-        self.ready()
-        old=self.job/'editable/shibielujing1'
-        old.mkdir(parents=True)
-        original=old/'shibielujing1.pptx'
-        original.write_bytes(b'old-layout-output')
-        c.update(self.job,conversion_mode='direct-path-v1',conversion_name='shibielujing1')
-        result=pp.convert(self.job,file_only=True)
-        self.assertNotEqual(Path(result['native']),original)
-        self.assertEqual(original.read_bytes(),b'old-layout-output')
-        self.assertEqual(c.read(self.job/'job.json')['conversion_mode'],'bundled-direct-v6')
-        self.assertEqual(pp.dependency(),c.SKILL.parents[1]/'native/scripts')
+    def test_new_ppt_submission_rejected_before_network(self):
+        with patch.object(self.api, 'me', side_effect=AssertionError('network')):
+            with self.assertRaises(c.ClientError):
+                self.prepare(application='ppt')
 
-    def test_radial_gradient_is_automatically_converted(self):
+    def test_legacy_ppt_returns_svg_without_desktop_or_resubmission(self):
         self.ready()
-        source=self.job/'result.svg'
-        data=b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600"><defs><radialGradient id="g"><stop stop-color="#336699"/><stop offset="1" stop-color="#ffffff"/></radialGradient></defs><svg x="300" y="200" width="100" height="100" viewBox="0 0 10 10"><rect width="10" height="10" fill="url(#g)"/></svg></svg>'
-        source.write_bytes(data);c.update(self.job,svg_sha256=c.sha(data))
-        result=pp.convert(self.job,file_only=True)
-        self.assertTrue(Path(result['native']).is_file())
-        self.assertEqual(source.read_bytes(),data)
-        self.assertEqual(c.read(self.job/'direct-mapping.json')['adjustments']['gradient_to_first_stop'],1)
-        from pptx import Presentation
-        deck=Presentation(result['native']); shape=deck.slides[0].shapes[0]
-        self.assertGreater(shape.left,0);self.assertGreater(shape.top,0)
+        c.update(self.job, application='ppt', conversion_mode='bundled-direct-v6')
+        original = self.job/'editable/old.pptx'
+        original.parent.mkdir(); original.write_bytes(b'old-output')
+        with patch.object(pp.subprocess, 'run', side_effect=AssertionError('desktop must not start')):
+            result = pp.convert(self.job, file_only=True)
+            delivered = pp.complete(self.job, visual_checked=True)
+        self.assertEqual(result['svg'], delivered['svg'])
+        self.assertTrue(result['svg'].endswith('.svg'))
+        self.assertEqual(original.read_bytes(), b'old-output')
+        self.assertEqual((self.job/'result.svg').read_bytes(), SVG)
+        self.assertEqual(len(self.api.submits), 1)
+
+    def test_gradients_clipping_and_nested_coordinates_remain_unchanged(self):
+        self.ready()
+        source = self.job/'result.svg'
+        data = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600"><defs><radialGradient id="g"><stop stop-color="#336699"/><stop offset="1" stop-color="#fff"/></radialGradient><clipPath id="c"><circle cx="5" cy="5" r="4"/></clipPath><marker id="a" markerWidth="5" markerHeight="5"><path d="M0 0L5 2L0 5Z"/></marker></defs><svg x="300" y="200" width="100" height="100" viewBox="0 0 10 10"><g transform="rotate(10 5 5)" clip-path="url(#c)"><rect width="10" height="10" fill="url(#g)"/><path d="M1 1L8 8" marker-end="url(#a)"/></g></svg></svg>'
+        source.write_bytes(data); c.update(self.job, svg_sha256=c.sha(data))
+        result = pp.export_svg(self.job)
+        self.assertEqual(Path(result['svg']).read_bytes(), data)
+        self.assertEqual(source.read_bytes(), data)
 
     def test_default_font_and_user_override_survive_resume(self):
-        from pptx import Presentation
+        import xml.etree.ElementTree as ET
         self.ready()
-        first=pp.convert(self.job,file_only=True)
-        def fonts(path):
-            return [run.font.name for slide in Presentation(path).slides for shape in slide.shapes
-                    if shape.has_text_frame for para in shape.text_frame.paragraphs for run in para.runs]
-        self.assertEqual(set(fonts(first['native'])),{'Times New Roman'})
-        custom=pp.convert(self.job,file_only=True,font_family='Calibri')
-        self.assertNotEqual(first['native'],custom['native'])
-        self.assertEqual(set(fonts(custom['native'])),{'Calibri'})
-        self.assertEqual(c.read(self.job/'job.json')['font_family'],'Calibri')
-        with patch.object(pp,'run',side_effect=AssertionError('font choice should survive resume')):
-            self.assertEqual(pp.convert(self.job,file_only=True)['native'],custom['native'])
+        first = pp.export_svg(self.job)
+        def text_node(path):
+            return next(n for n in ET.parse(path).getroot().iter() if n.tag.endswith('}text'))
+        self.assertEqual(text_node(first['svg']).get('font-family'), 'Times New Roman')
+        custom = pp.export_svg(self.job, font_family='Calibri')
+        self.assertNotEqual(first['svg'], custom['svg'])
+        node = text_node(custom['svg'])
+        self.assertEqual(node.get('font-family'), 'Calibri')
+        self.assertEqual((node.get('x'),node.get('y'),node.get('font-size')), ('10','100','16'))
+        self.assertEqual(pp.export_svg(self.job)['svg'], custom['svg'])
+        self.assertEqual((self.job/'result.svg').read_bytes(), SVG)
 
-    def test_native_ppt_conversion_and_resume(self):
+    def test_changed_source_or_output_prevents_completion(self):
         self.ready()
-        try:result=pp.convert(self.job,file_only=True)
-        except c.ClientError:self.fail((self.job/'conversion.log').read_text(encoding='utf-8'))
-        self.assertGreaterEqual(result['native_shapes'],3)
-        self.assertGreaterEqual(result['native_text_runs'],1)
-        self.assertEqual((self.job/'result.svg').read_bytes(),SVG)
-        with patch.object(pp,'run',side_effect=AssertionError('conversion should reuse output')):
-            self.assertEqual(pp.convert(self.job,file_only=True)['native'],result['native'])
-        with self.assertRaises(c.ClientError):pp.complete(self.job,visual_checked=False)
+        result = pp.export_svg(self.job)
+        with self.assertRaises(c.ClientError):
+            pp.complete(self.job, visual_checked=False)
+        original = Path(result['svg']).read_bytes()
+        Path(result['svg']).write_bytes(original+b' ')
+        with self.assertRaises(c.ClientError):
+            pp.complete(self.job, visual_checked=True)
+        Path(result['svg']).write_bytes(original)
         (self.job/'result.svg').write_bytes(SVG+b' ')
-        with self.assertRaises(c.ClientError):pp.complete(self.job,visual_checked=True)
+        with self.assertRaises(c.ClientError):
+            pp.complete(self.job, visual_checked=True)
+
+    def test_adobe_import_requires_choice_and_matching_receipt(self):
+        self.ready(); result = pp.export_svg(self.job)
+        with self.assertRaises(c.ClientError):
+            pp.import_illustrator(self.job)
+        c.update(self.job, application='ai')
+        with self.assertRaises(c.ClientError):
+            pp.complete(self.job, visual_checked=True)
+        receipt = subprocess.CompletedProcess([], 0, json.dumps({'opened':True, 'path':result['svg'], 'reused':False}), '')
+        with patch.object(pp.subprocess, 'run', return_value=receipt) as run:
+            if os.name == 'nt':
+                imported = pp.import_illustrator(self.job)
+                self.assertTrue(imported['opened'])
+                self.assertIn('import_illustrator.ps1', ' '.join(run.call_args.args[0]))
+                pp.complete(self.job, visual_checked=True)
+                self.assertEqual(c.read(self.job/'job.json')['state'], 'delivered')
+
+    def test_import_failure_keeps_svg_and_does_not_mark_delivered(self):
+        self.ready(); c.update(self.job, application='ai')
+        result = pp.export_svg(self.job)
+        with patch.object(pp.subprocess, 'run', side_effect=OSError('unavailable')):
+            with self.assertRaises(c.ClientError):
+                pp.import_illustrator(self.job)
+        self.assertTrue(Path(result['svg']).is_file())
+        self.assertNotEqual(c.read(self.job/'job.json')['state'], 'delivered')
+
 
 
 class TransportTests(unittest.TestCase):

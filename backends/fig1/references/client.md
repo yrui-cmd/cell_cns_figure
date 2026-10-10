@@ -10,7 +10,7 @@
 python -X utf8 '<SKILL>/scripts/client.py' probe
 python -X utf8 '<SKILL>/scripts/client.py' discover-key
 python -X utf8 '<SKILL>/scripts/client.py' balance
-python -X utf8 '<SKILL>/scripts/client.py' submit --text-file '<文字.txt>' --application ppt --thread-id '<当前CODEX_THREAD_ID>' --job-dir '<独立任务目录>' --credits-approved 20 --authorize-wake
+python -X utf8 '<SKILL>/scripts/client.py' submit --text-file '<文字.txt>' --application svg --thread-id '<当前CODEX_THREAD_ID>' --job-dir '<独立任务目录>' --credits-approved 20 --authorize-wake
 python -X utf8 '<SKILL>/scripts/client.py' status --job-dir '<原任务目录>'
 python -X utf8 '<SKILL>/scripts/client.py' resume --job-dir '<原任务目录>'
 python -X utf8 '<SKILL>/scripts/client.py' stop --job-dir '<原任务目录>'
@@ -20,7 +20,7 @@ python -X utf8 '<SKILL>/scripts/client.py' stop --job-dir '<原任务目录>'
 
 有图片时使用`--image`，有文字时使用`--text-file`，可同时使用。
 
-可在用户指定输出位置或当前聊天工作目录建立任务文件夹；不要把客户端任务塞入服务器的CNS_plus待处理目录。原图、文字、job.json、result.svg、转换文件都保存在该独立目录。相同job-dir重试必须匹配原图/文字哈希、应用和聊天身份；不匹配直接拒绝。
+可在用户指定输出位置或当前聊天工作目录建立任务文件夹；不要把客户端任务塞入服务器的CNS_plus待处理目录。原图、文字、job.json、result.svg、SVG交付副本都保存在该独立目录。相同job-dir重试必须匹配原图/文字哈希、应用和聊天身份；不匹配直接拒绝。
 
 提交前可运行 `setup-waiter`，注册并启动无窗口常驻恢复监控，对应`CellCnsFig1_Client_Recovery`恢复任务，不提交订单。submit也会自动检查/注册它。每个任务一个独立Python进程，OS文件锁保证不会重复处理；登录任务直接启动无窗口`pythonw.exe recovery_monitor.py`，由该常驻Python进程每30秒检查已登记任务，必要时恢复退出的接收进程；已持有文件锁的接收进程保持运行。不使用每分钟PowerShell触发器，不反复打开控制台。它不创建新订单或新聊天。用户stop状态优先。
 
@@ -50,3 +50,17 @@ python -X utf8 '<SKILL>/scripts/client.py' stop --job-dir '<原任务目录>'
 共享配置格式沿用小描配置工具的 `API_Key="..."`。不复制明文、不覆盖已有配置；显式文件或优先配置损坏时报告错误，不悄悄换账户。发现多个不同备选密钥时只问使用哪个文件，不要求重新发送密钥。
 
 `balance` 和新 `submit` 自动使用同一检测规则。已有订单保持任务中记录的凭据路径与账户身份，恢复时不重新发现或切换账号。本地可读取不代表远端仍有效，正常提交前仍使用原有余额与身份校验；鉴权失败或网络故障不当作配置不存在。
+
+## SVG交付和可选Adobe导入
+
+新任务默认 `--application svg`；用户选择Adobe Illustrator时使用 `--application ai`，交付文件仍为SVG。PPTX不再作为输出选项。
+
+```powershell
+python -X utf8 '<SKILL>/scripts/client.py' export --job-dir '<原任务目录>'
+# 仅已选Adobe导入时执行
+python -X utf8 '<SKILL>/scripts/client.py' import-illustrator --job-dir '<原任务目录>'
+# 实际预览验收后执行
+python -X utf8 '<SKILL>/scripts/client.py' complete --job-dir '<原任务目录>' --visual-checked
+```
+
+旧 `convert` 命令仅兼容历史回执，执行SVG导出，不启动PowerPoint或原生重绘。旧application=ppt任务直接交付SVG，不重新提交或收费。

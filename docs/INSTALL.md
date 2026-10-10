@@ -2,7 +2,7 @@
 
 ## 安装
 
-支持 **Windows + Codex 桌面 + Python 3.11–3.14**，需要 Git。PowerPoint 预览需要桌面版 PowerPoint；AI 输出需要 Illustrator 已运行且打开目标文档。后台等待和原聊天唤醒依赖 Codex 桌面的本地 app-tools 接口与 Node.js；脚本会查找 Codex 自带运行时，找不到时需安装 Node.js 并加入 PATH。版本变化时可先运行 `probe` 检查。
+支持 **Windows + Codex 桌面 + Python 3.11–3.14**，需要 Git。直接返回SVG无需Office或Illustrator；仅自动导入选项需要本机安装Adobe Illustrator。后台等待和原聊天唤醒依赖 Codex 桌面的本地 app-tools 接口与 Node.js；脚本会查找 Codex 自带运行时，找不到时需安装 Node.js 并加入 PATH。版本变化时可先运行 `probe` 检查。
 
 在 PowerShell 中执行。以下是全新安装；若目标文件夹已存在，先检查已有安装和运行中任务，不要覆盖正在使用的脚本。
 
@@ -14,7 +14,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Skill 下载失败，请检查目标目录和�
 python -m pip install -r (Join-Path $skillsRoot 'cell_cns_figure/requirements.txt')
 ```
 
-SVG→PPT/AI 转换代码已随本 Skill 完整内置，不需要安装同级 cell_su7，也不会运行时下载或临时调用它。
+SVG直接交付；可选的Illustrator导入脚本已内置，无需其他Skill。
 
 最终结构：
 
@@ -24,22 +24,21 @@ skills/
     SKILL.md
     backends/fig1/
     backends/fig2/
-    native/scripts/
 ```
 
 让 Codex 重新加载 Skills 后，在聊天中调用：
 
-> 用 cell_cns_figure 处理这张图，输出 PPT。
+> 用 cell_cns_figure 处理这张图，输出 SVG。
 
 或者：
 
-> 用 cell_cns_figure 的2号处理以下科研文字，输出 Adobe Illustrator 文件。
+> 用 cell_cns_figure 的2号处理以下科研文字，并将收到的SVG导入 Adobe Illustrator。
 
 图片上限为10 MiB；2号文字上限为500000字符。PDF 需先按指定页转成 PNG/JPG。首次使用需要有效的小描 API Key及足够额度，凭据通过标准输入写入当前 Windows 用户的 DPAPI 密文文件。
 
 ## 运行与恢复
 
-提交后，独立 Python 进程等待结果，收到 SVG 后校验任务、费用和文件哈希，再通知原 Codex 聊天继续转换。每个订单使用持久请求ID，响应丢失时恢复同一订单。1号已有的19额度历史订单继续按原回执处理，新订单为20额度。
+提交后，独立 Python 进程等待结果，收到 SVG 后校验任务、费用和文件哈希，再通知原 Codex 聊天检查并返回SVG。每个订单使用持久请求ID，响应丢失时恢复同一订单。1号已有的19额度历史订单继续按原回执处理，新订单为20额度。
 
 首次提交会注册当前 Windows 用户的恢复任务：`CellCnsFig1_Client_Recovery` 或 `CellCnsFig2_Client_Recovery`。恢复任务仅在登录时直接启动一次无窗口 `pythonw.exe`，常驻监控器每30秒在同一进程内检查已登记任务；不再每分钟启动 PowerShell。已在运行的接收进程不会重复启动。电脑重启后需重新登录并打开 Codex；它不会创建新的付费订单。`stop` 只停止本地接收，不代表远端取消或退款。
 
@@ -53,11 +52,9 @@ python -X utf8 '<Skill目录>/backends/fig1/scripts/client.py' probe
 
 ## 输出与适用边界
 
-输出为原生可编辑 PPTX 或 AI，并保留接收到的 SVG。转换完全使用本 Skill 的内置代码，不调用图片识别或其他收费入口。
+输出为可编辑SVG，原始返回文件保留。SVG副本沿用原图的路径、位置、尺寸、裁剪、渐变和箭头，仅设置默认或指定字体。
 
-已修正嵌套 SVG 的视口位置和尺寸计算。转换固定原路径、位置和尺寸；渐变、裁剪等效果按直接映射规则处理，不再以效果兼容问题暂停；交付前仍需查看实际软件预览。旧版结果重新转换时使用新输出目录，不覆盖已有结果、不重新扣费。
-
-本轮验证包含两条客户端流程、独立内置转换器的真实 PPTX 输出和 Illustrator 几何缓存；未运行真实 Illustrator 桌面导出或付费线上任务。
+选择Adobe导入时，接收后将SVG直接打开为Illustrator独立文档，不依赖空白文档或逐路径转换。导入失败仍可取得SVG，修复桌面条件后继续原任务。
 
 ## 开发测试
 
@@ -66,7 +63,6 @@ python -X utf8 '<Skill目录>/backends/fig1/scripts/client.py' probe
 ```powershell
 python -X utf8 -m unittest discover -s backends/fig1/tests -v
 python -X utf8 -m unittest discover -s backends/fig2/tests -v
-python -X utf8 -m unittest discover -s native/tests -v
 ```
 
 ## 数据与许可

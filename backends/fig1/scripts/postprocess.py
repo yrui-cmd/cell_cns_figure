@@ -1,150 +1,144 @@
-"""Bundled approved-SVG native drawing. No sibling Skill or paid image route."""
+"""Deliver the returned vector SVG; optionally open it in Illustrator."""
 import json
 import os
 import subprocess
-import sys
-import zipfile
+import uuid
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from client import ACCEPTED_PRICES, ClientError, Lock, SKILL, read, sha, update, validate_svg, write
+import client as c
+
+MODE = 'svg-delivery-v1'
 
 
-def dependency():
-    root=SKILL.parents[1]/'native'/'scripts'
-    required=('run_from_svg.py','run_illustrator.py','allocate_shibielujing_name.py','validate_vector_svg.py')
-    if not all((root/f).is_file() for f in required):
-        raise ClientError('本 Skill 内置 SVG 转换文件不完整，请修复 cell_cns_figure 安装')
-    return root
+def verified_source(directory):
+    directory = Path(directory).resolve()
+    state = c.read_job(directory) if hasattr(c, 'read_job') else c.read(directory/'job.json')
+    if state['state'] == 'stopped':
+        raise c.ClientError('Task is stopped; resume explicitly before delivery')
+    current = os.environ.get('CODEX_THREAD_ID')
+    if current and current != state['thread_id']:
+        raise c.ClientError('Continue delivery in the originating chat')
+    prices = getattr(c, 'ACCEPTED_PRICES', (c.PRICE,))
+    prefix = 'cfp_' if c.PRICE == 20 else 'fgp_'
+    if state.get('service', c.PREFIX) != c.PREFIX or not str(state.get('job_id', '')).startswith(prefix):
+        raise c.ClientError('Task belongs to another service')
+    if not state.get('svg') or state.get('charged_credits') not in prices:
+        raise c.ClientError('No verified returned SVG')
+    svg = Path(state['svg'])
+    if svg.resolve() != directory/'result.svg' or not svg.is_file():
+        raise c.ClientError('Returned SVG missing or outside task directory')
+    data = svg.read_bytes()
+    if c.sha(data) != state['svg_sha256']:
+        raise c.ClientError('Returned SVG changed')
+    c.validate_svg(data)
+    return state, svg, data
 
 
-def pptx_audit(path):
-    with zipfile.ZipFile(path) as z:
-        if z.testzip():raise ClientError('Damaged PPTX archive')
-        slide=ET.fromstring(z.read('ppt/slides/slide1.xml'))
-        ns={'p':'http://schemas.openxmlformats.org/presentationml/2006/main','a':'http://schemas.openxmlformats.org/drawingml/2006/main'}
-        if slide.findall('.//p:pic',ns) or slide.findall('.//a:blip',ns):
-            raise ClientError('PPTX contains raster/SVG pictures instead of native objects')
-        shapes=slide.findall('.//p:sp',ns)
-        if not shapes:raise ClientError('PPTX has no editable native shapes')
-        return {'native_shapes':len(shapes),'native_text_runs':len(slide.findall('.//a:t',ns))}
-
-
-def run(command, log):
-    with log.open('ab') as f:
-        offset=f.tell()
-        proc=subprocess.run(command,stdout=f,stderr=f,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
-    if proc.returncode:
-        with log.open('rb') as f:
-            f.seek(offset)
-            detail=f.read(65536).decode('utf-8',errors='replace')
-        reasons={
-            'Nested SVG viewport clipping requires preprocessing':'返回 SVG 存在真实子视口裁剪，需要展开后再转换，已停止以避免素材越界',
-            'Only redundant full-canvas clipping can be removed automatically':'返回 SVG 含局部裁剪，当前转换器需要先展开裁剪，尚未生成可交付文件',
-            'Even-odd compound fill requires winding normalization':'返回 SVG 的奇偶填充复合路径需要先规范化绕向，尚未生成可交付文件',
-            'AI_NOT_RUNNING':'Illustrator 尚未打开，请打开 Illustrator 和测试用目标文档后继续原任务',
-            'AI_DOCUMENT_REQUIRED':'Illustrator 缺少目标文档，请打开目标文档后继续原任务',
-        }
-        for marker,reason in reasons.items():
-            if marker in detail:
-                raise ClientError(reason+'；已保留 SVG，不重新付费提交')
-        raise ClientError('本地转换未完成；保留已收到的 SVG 和日志，不重新付费提交')
+def export_svg(directory, *, font_family=None):
+    directory = Path(directory).resolve()
+    with c.Lock(directory/'conversion.lock'):
+        state, source, data = verified_source(directory)
+        font = (font_family or state.get('font_family') or 'Times New Roman').strip()
+        if not font or any(ord(ch) < 32 for ch in font):
+            raise c.ClientError('Invalid font family')
+        root = ET.fromstring(data)
+        text_nodes = [n for n in root.iter() if n.tag.split('}')[-1] in ('text', 'tspan', 'textPath')]
+        if text_nodes:
+            # Change only font selection; retain geometry, clips, gradients and order.
+            css_font = font.replace('\\', '\\\\').replace('"', '\\"')
+            for node in text_nodes:
+                node.set('font-family', font)
+                style = node.get('style', '').rstrip().rstrip(';')
+                node.set('style', style + ';font-family:"' + css_font + '" !important;')
+            ET.register_namespace('', 'http://www.w3.org/2000/svg')
+            ET.register_namespace('xlink', 'http://www.w3.org/1999/xlink')
+            data = ET.tostring(root, encoding='utf-8', xml_declaration=True)
+        c.validate_svg(data)
+        destination = directory/'deliverables'
+        destination.mkdir(exist_ok=True)
+        output = destination/('figure-' + c.sha(data)[:12] + '.svg')
+        if not output.is_file() or output.read_bytes() != data:
+            temp = output.with_name(output.name + '.' + uuid.uuid4().hex + '.tmp')
+            try:
+                with temp.open('xb') as f:
+                    f.write(data); f.flush(); os.fsync(f.fileno())
+                os.replace(temp, output)
+            finally:
+                temp.unlink(missing_ok=True)
+        result = {'svg': str(output), 'original_svg': str(source), 'format': 'svg'}
+        c.write(directory/'svg-output.json', {
+            **result, 'mode': MODE, 'source_sha256': state['svg_sha256'],
+            'sha256': c.sha(data), 'font_family': font})
+        c.update(directory, conversion='svg_ready', conversion_mode=MODE,
+                 font_family=font, deliverables=result, last_error=None)
+        return result
 
 
 def convert(directory, *, file_only=False, font_family=None):
-    directory=Path(directory).resolve()
-    with Lock(directory/'conversion.lock'):
-        state=read(directory/'job.json')
-        if state['state']=='stopped':
-            raise ClientError('Task is stopped; resume explicitly before conversion')
-        if not state.get('svg') or state.get('charged_credits') not in ACCEPTED_PRICES:
-            raise ClientError('No verified returned SVG')
-        current=os.environ.get('CODEX_THREAD_ID')
-        if current and current!=state['thread_id']:
-            raise ClientError('Continue conversion in the originating chat')
-        svg=Path(state['svg'])
-        if svg.resolve()!=directory/'result.svg' or sha(svg.read_bytes())!=state['svg_sha256']:
-            raise ClientError('Returned SVG changed')
-        validate_svg(svg.read_bytes())
-        selected_font=(font_family or state.get('font_family') or 'Times New Roman').strip()
-        if not selected_font:
-            raise ClientError('Font family cannot be empty')
-        scripts=dependency()
-        destination=directory/'editable'
-        destination.mkdir(exist_ok=True)
-        name=state.get('conversion_name') if state.get('conversion_mode')=='bundled-direct-v6' and state.get('conversion_font')==selected_font else None
-        if not name:
-            name=subprocess.check_output([sys.executable,str(scripts/'allocate_shibielujing_name.py'),'--root',str(destination)],text=True,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0)).strip().splitlines()[-1]
-            update(directory,conversion_name=name,conversion_mode='bundled-direct-v6',font_family=selected_font,conversion_font=selected_font)
-        output=destination/name
-        from direct_svg import prepare
-        mapping_svg=output/(name+'-native.svg')
-        mapping=prepare(svg,mapping_svg,application=state['application'],font_family=selected_font)
-        write(directory/'direct-mapping.json',mapping)
-        mapping_sha=sha(mapping_svg.read_bytes())
-        log=directory/'conversion.log'
-        target=output/(name+('.pptx' if state['application']=='ppt' else '.ai'))
-        update(directory,conversion='running')
+    """Compatibility for old callbacks; now exports SVG without desktop conversion."""
+    return export_svg(directory, font_family=font_family)
+
+
+def verified_output(directory):
+    directory = Path(directory).resolve()
+    state, _, _ = verified_source(directory)
+    receipt_path = directory/'svg-output.json'
+    if not receipt_path.is_file():
+        raise c.ClientError('Export SVG before delivery')
+    receipt = c.read(receipt_path)
+    if receipt.get('mode') != MODE or receipt.get('source_sha256') != state['svg_sha256']:
+        raise c.ClientError('Export the current SVG before delivery')
+    path = Path(receipt['svg'])
+    if path.resolve().parent != directory/'deliverables' or not path.is_file():
+        raise c.ClientError('Delivery SVG missing or outside task directory')
+    data = path.read_bytes()
+    if c.sha(data) != receipt.get('sha256'):
+        raise c.ClientError('Delivery SVG changed since validation')
+    c.validate_svg(data)
+    return state, receipt
+
+
+def import_illustrator(directory):
+    directory = Path(directory).resolve()
+    with c.Lock(directory/'conversion.lock'):
+        state, receipt = verified_output(directory)
+        if state.get('application') != 'ai':
+            raise c.ClientError('Illustrator import was not selected for this task')
+        if os.name != 'nt':
+            raise c.ClientError('Automatic Illustrator import requires Windows; the SVG is ready')
+        script = Path(__file__).with_name('import_illustrator.ps1')
         try:
-            # Reuse a verified native output; do not redraw after a chat interruption.
-            native_receipt=directory/'native-output.json'
-            old=read(native_receipt) if native_receipt.exists() else {}
-            reusable=old.get('mapping_sha256')==mapping_sha and old.get('conversion_mode')=='bundled-direct-v6' and old.get('svg_sha256')==state['svg_sha256'] and target.is_file() and old.get('native_sha256')==sha(target.read_bytes())
-            if not reusable:
-                route=SKILL/'scripts/run_direct_ppt.py' if state['application']=='ppt' else scripts/'run_illustrator.py'
-                run([sys.executable,'-X','utf8',str(route),'--input-svg',str(mapping_svg),
-                     '--output-root',str(destination),'--job-name',name],log)
-            if not target.is_file() or target.stat().st_size==0:
-                raise ClientError('Native output file missing')
-            result={'svg':str(svg),'application':state['application'],'native':str(target)}
-            if state['application']=='ppt':
-                result.update(pptx_audit(target))
-                preview=output/(name+'.png')
-                if not file_only:
-                    if os.name!='nt':raise ClientError('Live PowerPoint visualization currently requires Windows')
-                    playback=output/(name+'-playback.pptx')
-                    if old.get('playback_sha256') and playback.exists() and sha(playback.read_bytes())==old['playback_sha256']:
-                        pass
-                    else:
-                        run(['powershell','-NoProfile','-ExecutionPolicy','Bypass','-File',str(scripts/'run_ppt_path_playback.ps1'),
-                             '-InputPptx',str(target),'-OutputPptx',str(playback)],log)
-                    result.update(pptx_audit(playback))
-                    result['playback']=str(playback)
-                    run(['powershell','-NoProfile','-ExecutionPolicy','Bypass','-File',str(SKILL/'scripts/preview_ppt.ps1'),
-                         '-InputPptx',str(playback),'-OutputPng',str(preview)],log)
-                    if not preview.is_file():raise ClientError('PowerPoint preview is missing')
-                    result['preview']=str(preview)
-            else:
-                preview=output/(name+'.png')
-                if not preview.is_file():raise ClientError('Illustrator PNG preview missing')
-                result['preview']=str(preview)
-            receipt={**result,'svg_sha256':state['svg_sha256'],'conversion_mode':'bundled-direct-v6','mapping_sha256':mapping_sha,'native_sha256':sha(target.read_bytes()),
-                     'playback_sha256':sha(Path(result['playback']).read_bytes()) if result.get('playback') else None}
-            write(native_receipt,receipt)
-            update(directory,conversion='native_ready',deliverables=result,last_error=None)
-            return result
-        except Exception as e:
-            update(directory,conversion='attention',last_error=type(e).__name__)
-            raise
+            process = subprocess.run(
+                ['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+                 '-File', str(script), '-SvgPath', receipt['svg']],
+                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise c.ClientError('Illustrator import could not be confirmed; SVG is preserved, retry the same task') from exc
+        if process.returncode:
+            raise c.ClientError('Illustrator import failed; open Illustrator and retry the same task. SVG is preserved')
+        try:
+            result = json.loads(process.stdout.strip())
+        except ValueError:
+            raise c.ClientError('Illustrator import could not be confirmed; SVG is preserved') from None
+        if not result.get('opened') or Path(result.get('path', '')).resolve() != Path(receipt['svg']).resolve():
+            raise c.ClientError('Illustrator import receipt mismatch')
+        c.write(directory/'illustrator-import.json', {**result, 'svg_sha256': receipt['sha256']})
+        return {**result, 'svg': receipt['svg']}
 
 
 def complete(directory, *, visual_checked):
-    directory=Path(directory)
-    state=read(directory/'job.json')
-    current=os.environ.get('CODEX_THREAD_ID')
-    if state['state']=='stopped' or current and current!=state['thread_id']:
-        raise ClientError('Only the active originating chat may complete this task')
-    if not visual_checked or state['conversion']!='native_ready':
-        raise ClientError('Native conversion and actual visual verification required')
-    result=read(directory/'native-output.json')
-    if state.get('conversion_mode')!='bundled-direct-v6' or result.get('conversion_mode')!='bundled-direct-v6':
-        raise ClientError('旧版转换结果需要先重新执行 convert；沿用原 SVG，不重新付费')
-    if sha(Path(state['svg']).read_bytes())!=state['svg_sha256'] or result['svg_sha256']!=state['svg_sha256']:
-        raise ClientError('Returned SVG changed since conversion')
-    if sha(Path(result['native']).read_bytes())!=result['native_sha256']:
-        raise ClientError('Native file changed since validation')
-    if state['application']=='ppt':pptx_audit(Path(result['native']))
-    if result.get('playback') and sha(Path(result['playback']).read_bytes())!=result['playback_sha256']:
-        raise ClientError('Playback file changed since validation')
-    update(directory,state='delivered',conversion='complete',visual_checked=True)
-    return {k:result[k] for k in ('svg','native','preview','playback') if result.get(k)}
+    directory = Path(directory).resolve()
+    with c.Lock(directory/'conversion.lock'):
+        state, receipt = verified_output(directory)
+        if not visual_checked:
+            raise c.ClientError('Actual SVG visual verification required')
+        if state.get('application') == 'ai':
+            imported = directory/'illustrator-import.json'
+            if not imported.is_file() or c.read(imported).get('svg_sha256') != receipt['sha256']:
+                raise c.ClientError('Import this SVG into Illustrator before completing the selected delivery')
+        updated = c.update(directory, state='delivered', conversion='complete', visual_checked=True)
+        if updated['state'] != 'delivered':
+            raise c.ClientError('Task stopped before delivery')
+        return {key: receipt[key] for key in ('svg', 'original_svg')}

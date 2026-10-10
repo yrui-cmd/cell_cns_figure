@@ -22,6 +22,3 @@ jobs:
       - name: Test route 2
         working-directory: cell_cns_figure
         run: python -X utf8 -m unittest discover -s backends/fig2/tests -v
-      - name: Test bundled native layout
-        working-directory: cell_cns_figure
-        run: python -X utf8 -m unittest discover -s native/tests -v

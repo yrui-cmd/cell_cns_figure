@@ -19,7 +19,7 @@ class InviteTests(unittest.TestCase):
                     self.payload=payload
                     return dict(job_id='fgp_'+'a'*24,charged_credits=45,status='queued')
             api=API()
-            args=dict(image=None,text='Cell',application='ppt',thread_id='11111111-1111-1111-1111-111111111111',credential_file=Path(tmp)/'key',credits_approved=45,wake_authorized=True,api=api,registry=Path(tmp)/'registry')
+            args=dict(image=None,text='Cell',application='svg',thread_id='11111111-1111-1111-1111-111111111111',credential_file=Path(tmp)/'key',credits_approved=45,wake_authorized=True,api=api,registry=Path(tmp)/'registry')
             with self.assertRaises(c.ClientError):c.prepare(directory,**args)
             self.assertFalse((directory/'job.json').exists())
             permit='Cell_Projkldjd'
