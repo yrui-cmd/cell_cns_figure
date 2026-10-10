@@ -241,7 +241,7 @@ def prepare(directory, *, image, text='', application, thread_id, credential_fil
             raise ClientError('每个新任务需要一个一次性邀请码，验证后仍扣45额度')
         from invite import encrypt
         invite_ciphertext = encrypt(invite_code) if invite_code else None
-        if me['credits_available'] < PRICE:
+        if me['credits_available'] < PRICE and not invite_code:
             raise ClientError('可用额度不足 45，不提交')
         original = directory/('input'+ext) if image else None
         if original:

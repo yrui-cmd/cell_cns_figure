@@ -14,7 +14,7 @@ class InviteTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             directory=Path(tmp)/'order'
             class API:
-                def me(self):return dict(id='customer',credits_available=90,credits_per_task=45,invite_required=True)
+                def me(self):return dict(id='customer',credits_available=0,credits_per_task=45,invite_required=True)
                 def submit(self,payload):
                     self.payload=payload
                     return dict(job_id='fgp_'+'a'*24,charged_credits=45,status='queued')
@@ -22,7 +22,7 @@ class InviteTests(unittest.TestCase):
             args=dict(image=None,text='Cell',application='ppt',thread_id='11111111-1111-1111-1111-111111111111',credential_file=Path(tmp)/'key',credits_approved=45,wake_authorized=True,api=api,registry=Path(tmp)/'registry')
             with self.assertRaises(c.ClientError):c.prepare(directory,**args)
             self.assertFalse((directory/'job.json').exists())
-            permit='fgp_inv_'+'x'*40
+            permit='Cell_Projkldjd'
             with patch.object(invite,'transform',side_effect=lambda b,protect:bytes(v^42 for v in b)):
                 state=c.prepare(directory,**args,invite_code=permit)
                 self.assertNotIn(permit,(directory/'job.json').read_text())
