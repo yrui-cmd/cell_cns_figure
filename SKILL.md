@@ -1,6 +1,6 @@
 ---
 name: cell_cns_figure
-description: 合并cell_cns_fig1和cell_cns_fig2的客户绘图入口。使用时选择1号（20额度，日常使用）或2号（45额度，适合高嵌套文件、更注重美观），后台接收可编辑SVG，在原聊天返回文件，或按用户选择导入Adobe Illustrator。
+description: 合并cell_cns_fig1和cell_cns_fig2的客户绘图入口。使用时选择1号（20额度，日常使用）或2号（45额度，适合高嵌套文件、更注重美观），接收科研图并识别路径，可选择SVG、PowerPoint或Adobe Illustrator展示，文字保持可编辑。
 ---
 
 # cell_cns_figure
@@ -23,6 +23,10 @@ description: 合并cell_cns_fig1和cell_cns_fig2的客户绘图入口。使用�
 
 用户已选1/2或对应旧名称时直接沿用，不重复询问、不自行改选。新任务开始后固定该方案；后台返回、重启或异常恢复不重新选方案。用户在上述明确价格后选择并要求处理，已授权本任务对应费用，不再重复确认。仅提及名称或询问价格不等于提交。
 
+方案确定后，新任务若尚未指定展示方式，只问：“识别路径后，用哪种方式展示：SVG、PowerPoint（PPTX）还是Adobe Illustrator（AI）？”已有选择直接沿用；用户明确表示默认或由你决定时使用SVG。原任务恢复、后台返回不重复询问。将选择分别保存为application=svg、ppt、ai；不将本地展示方式选择当作新绘图订单。
+
+对用户统一使用“识别路径”作为功能术语；展示选项固定写SVG、PowerPoint（PPTX）、Adobe Illustrator（AI）。图形可逐个编辑，文字保持文字，不转曲。内部文件格式、命令和状态字段沿用原名称，避免破坏兼容。
+
 选择后仅加载对应内部流程：
 - 1号：[内部流程](backends/fig1/WORKFLOW.md)，Python入口为本Skill目录下`backends/fig1/scripts/client.py`。文字、图片或图文均可；固定20额度。
 - 2号：[内部流程](backends/fig2/WORKFLOW.md)，Python入口为本Skill目录下`backends/fig2/scripts/client.py`。文字、图片或图文；固定45额度。
@@ -31,13 +35,13 @@ description: 合并cell_cns_fig1和cell_cns_fig2的客户绘图入口。使用�
 
 ## 对话规则
 
-本节覆盖两个内部流程中的显示规则。除固定开场/结尾提示、入口选择及上面的额度/用途说明外，不主动讲解接口、后台机制、操作步骤、进度或测试细节。输入、API Key或2号邀请码确实缺失时只问必要的简短问题；用户已提供则不再问。询问 API Key 前先执行对应分支的 `client.py discover-key` 检查本地已有凭据；找到后直接复用，正常提交前仍验证实时余额与账户。仅明确未找到时提示“请提供小描 API Key。”；配置损坏、多个不同凭据或网络失败应说明实际原因，不当作缺少密钥，不索要账号密码。默认直接返回SVG；用户选择导入Adobe Illustrator时记录application=ai，接收后自动导入。用户只说Adobe也按Illustrator导入处理。不再询问或执行PPTX转换。真实错误简短说明并保留进度，不以安静为由掩盖失败。最终给所选文件链接，并追加固定结尾提示。
+本节覆盖两个内部流程中的显示规则。除固定开场/结尾提示、入口选择及上面的额度/用途说明外，不主动讲解接口、后台机制、操作步骤、进度或测试细节。输入、API Key或2号邀请码确实缺失时只问必要的简短问题；用户已提供则不再问。询问 API Key 前先执行对应分支的 `client.py discover-key` 检查本地已有凭据；找到后直接复用，正常提交前仍验证实时余额与账户。仅明确未找到时提示“请提供小描 API Key。”；配置损坏、多个不同凭据或网络失败应说明实际原因，不当作缺少密钥，不索要账号密码。按已保存的展示选择返回文件；用户选择Adobe Illustrator时记录application=ai，接收后识别路径并保存AI。用户只说Adobe也按Illustrator导入处理。用户要求可逐个编辑的PPT时记录application=ppt，使用本Skill自带识别路径流程；未指定展示方式的新任务按入口询问一次。真实错误简短说明并保留进度，不以安静为由掩盖失败。最终给所选文件链接，并追加固定结尾提示。
 
 ## 结果返回后
 
 这是原任务的继续，不再次询问1号/2号。读取回执任务目录的job.json，以已保存的service、job_id和收费字段核对分支：`cfp_`订单且20额度为1号；`fgp_`订单且45额度为2号。调整前已接收的1号历史订单按原19额度回执继续，不改历史账单、不补扣；旧授权但尚未确认接收的请求，先保留原请求并确认当前价格。互相冲突则保留进度并报告错误，不切换接口或创建新订单。
 
-用对应分支client.py执行acknowledge，继续export和complete；选择Adobe Illustrator导入时，在complete前执行import-illustrator；保留原SVG，沿用原聊天、原凭据和原任务目录。唤醒是否送达不明确时先核对回执，不盲发。已有订单恢复只使用已有request_id，不重新付费提交。
+用对应分支client.py执行acknowledge，继续export和complete；选择PPT时在complete前执行export-ppt并检查实际PowerPoint对照预览；选择Adobe Illustrator导入时，在complete前执行import-illustrator；保留原SVG，沿用原聊天、原凭据和原任务目录。唤醒是否送达不明确时先核对回执，不盲发。已有订单恢复只使用已有request_id，不重新付费提交。
 
 旧版运行中的回执可能仍写cell_cns_fig1或cell_cns_fig2，按其已绑定分支接续即可。旧路径脚本仅用于兼容已启动的接收器；新任务统一使用本入口的backends目录。
 
@@ -49,16 +53,18 @@ description: 合并cell_cns_fig1和cell_cns_fig2的客户绘图入口。使用�
 
 ## 本地进度面板
 
-提交成功后脚本自动在原聊天右侧创建并打开进度面板，返回 `progress_opened=true`，随后结束本轮；不要由模型重复打开面板。面板与后台接收器独立运行，显示持续流动动画并按一小时预估从0到99%，只有Python已接收、校验并保存返回SVG才到100%；提前收到即提前完成，超时保持99%等待。面板只读取本地状态，不访问网站，不调用模型或持续发送进度消息。100%表示SVG已接收，原聊天继续检查、返回文件，并执行用户已选的Illustrator导入。异常或暂停如实显示，不能伪装完成。原面板关闭或连接中断时，用对应分支的 `client.py progress --job-dir <原目录>`恢复并重新打开，不重新提交或扣费。
+提交成功后脚本自动在原聊天右侧创建并打开进度面板，返回 `progress_opened=true`，随后结束本轮；不要由模型重复打开面板。面板与后台接收器独立运行，显示持续流动动画并按一小时预估从0到99%，只有Python已接收、校验并保存返回SVG才到100%；提前收到即提前完成，超时保持99%等待。面板只读取本地状态，不访问网站，不调用模型或持续发送进度消息。100%表示SVG已接收，原聊天继续检查、返回文件，并执行用户已选的PPT识别路径或Illustrator导入。异常或暂停如实显示，不能伪装完成。原面板关闭或连接中断时，用对应分支的 `client.py progress --job-dir <原目录>`恢复并重新打开，不重新提交或扣费。
 
-## SVG交付与Adobe导入
+## 识别路径与展示方式
 
 1. 接收并校验原SVG后执行 `client.py export --job-dir <原目录>`。交付副本只设置默认或指定字体，完整保留路径、坐标、大小、变换、分层顺序、渐变、裁剪和箭头；不重新描摹、栅格化或重新排版。
 2. 检查实际SVG预览中的位置、比例、文字与箭头。不要将结构校验说成视觉验收；无法预览时如实说明。
-3. 默认直接返回导出的SVG链接。用户已选Adobe时执行 `client.py import-illustrator --job-dir <原目录>`，将SVG作为独立文档打开，不改动已有文档；不需要先建空白文档。导入副本会将marker箭头按原坐标展开为普通矢量，保留曲线本体、渐变与裁剪。命令返回实际Illustrator预览路径，检查该预览后才报告导入效果正常。
-4. 验收后执行 `client.py complete --job-dir <原目录> --visual-checked` 并返回SVG链接。导入失败时仍提供已保存SVG，说明可手动在Illustrator中打开，保留原任务供恢复，不重新付费。
+3. 默认直接返回导出的SVG链接。用户已选Adobe时执行 `client.py import-illustrator --job-dir <原目录>`，将SVG作为独立文档打开，不改动已有文档；不需要先建空白文档。导入副本会将marker箭头按原坐标展开为普通矢量，保留曲线本体、渐变与裁剪。导入后另存真正的 `.ai` 文件，再重新打开保存文件导出实际预览；文字保留原生文本，不能转曲。核对画布比例、文字内容及坐标，并查看SVG/Illustrator对照页后才报告效果正常。
+4. 验收后执行 `client.py complete --job-dir <原目录> --visual-checked`；Adobe选择返回AI和SVG链接，默认选择返回SVG。导入失败时仍提供已保存SVG，说明可手动在Illustrator中打开，保留原任务供恢复，不重新付费。
 
-旧任务中的application=ppt仅用于读取历史记录，直接返回SVG；旧convert命令只作为export的兼容别名，不执行桌面转换。不得把SVG改后缀伪装为AI文件，也不要求为直接获取SVG安装Office或Illustrator。
+用户要求PPT时执行 `client.py export-ppt --job-dir <原目录>`；新任务可用 `submit --application ppt`。统一采用“图形原生路径 + 文字原生文本框”：文字必须能直接打字修改，不能转曲或以图片代替。按SVG实际基线、字号、换行和坐标放置文本框，关闭自动换行/自动缩放，并实测校正当前PowerPoint的字体基线偏移。检查命令返回的实际PowerPoint预览和SVG对照页，必要时加 `--illustrator` 查看实际Adobe对照。完成时同时返回PPTX与SVG。详见 [识别路径与显示一致性](backends/fig2/references/postprocess.md)。
+
+历史application=ppt但没有原生PPT交付标记的任务仍按原回执交付SVG；用户明确要求PPT后在原目录执行export-ppt即可，不新建或扣费。convert按已保存选择执行；旧v1转曲PPT需要在原目录重新export-ppt升级为v2原生文字，不重新收费，默认仍为SVG。不得把SVG改后缀伪装为AI文件，也不要求为直接获取SVG安装Office或Illustrator。
 
 ## 字体
 

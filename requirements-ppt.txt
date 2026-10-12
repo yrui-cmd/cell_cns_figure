@@ -1,0 +1,8 @@
+-r requirements.txt
+python-pptx>=1.0,<2
+CairoSVG>=2.7,<3
+cairocffi>=1.6,<2
+skia-pathops>=0.9,<1
+fonttools>=4.50,<5
+svgelements>=1.9,<2
+pywin32>=306; sys_platform == "win32"

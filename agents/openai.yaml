@@ -1,4 +1,4 @@
 interface:
   display_name: "cell_cns_figure"
-  short_description: "科研绘图统一入口：返回可编辑SVG，也可选择导入Adobe Illustrator"
-  default_prompt: "使用 $cell_cns_figure 处理这份文字或图片，先让我选择1号或2号。"
+  short_description: "科研绘图与识别路径：可选SVG、PowerPoint或Adobe Illustrator展示"
+  default_prompt: "使用 $cell_cns_figure 处理这份文字或图片，先让我选择1号或2号，再选择识别路径后的展示方式。"

@@ -67,7 +67,7 @@ python -X utf8 '<SKILL>/scripts/client.py' stop --job-dir '<原任务目录>'
 
 ## SVG交付和可选Adobe导入
 
-新任务默认 `--application svg`；用户选择Adobe Illustrator时使用 `--application ai`，交付文件仍为SVG。PPTX不再作为输出选项。
+新任务按用户选择使用 `--application svg|ppt|ai`；未指定展示方式时按入口询问，用户选择默认时使用SVG。选择Adobe Illustrator时使用 `--application ai`，交付AI及SVG。用户要求可逐个编辑的PPT时使用 `--application ppt`，本地转换不另收费。
 
 ```powershell
 python -X utf8 '<SKILL>/scripts/client.py' export --job-dir '<原任务目录>'
@@ -77,4 +77,6 @@ python -X utf8 '<SKILL>/scripts/client.py' import-illustrator --job-dir '<原任
 python -X utf8 '<SKILL>/scripts/client.py' complete --job-dir '<原任务目录>' --visual-checked
 ```
 
-旧 `convert` 命令仅兼容历史回执，执行SVG导出，不启动PowerPoint或原生重绘。旧application=ppt任务直接交付SVG，不重新提交或收费。
+`export` 仅导出SVG；`export-ppt --job-dir <原目录>` 使用自带代码生成识别路径PPTX，并导出PowerPoint实际预览和SVG对照页。可加 `--illustrator` 生成三方实际对照。`convert` 根据保存的ppt_delivery选择执行。历史application=ppt但未选择新转换的任务保持SVG交付；用户要求后运行export-ppt，不重新提交或收费。
+
+`import-illustrator` 返回 `ai`、`preview` 和 `comparison_page`；AI为Illustrator实际保存并重开的文件，文字可编辑。确认预览后complete会一并返回AI与SVG。已有任务重试此本地步骤不重新提交或扣费。

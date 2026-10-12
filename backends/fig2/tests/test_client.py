@@ -229,10 +229,57 @@ class ClientTests(unittest.TestCase):
         with patch.object(c,'poll_once',side_effect=lambda directory:c.update(directory,state='stopped')),patch.object(c.time,'sleep'):
             c.wait(self.job)
         self.assertEqual(c.read(self.job/'waiter.json')['pid'],os.getpid())
-    def test_new_ppt_submission_rejected_before_network(self):
+    def test_invalid_output_rejected_before_network(self):
         with patch.object(self.api, 'me', side_effect=AssertionError('network')):
             with self.assertRaises(c.ClientError):
-                self.prepare(application='ppt')
+                self.prepare(application='invalid')
+
+    def test_new_ppt_selection_is_saved_without_desktop(self):
+        state=self.prepare(application='ppt')
+        self.assertEqual(state['ppt_delivery'],'native-paths-v2')
+
+    def test_ppt_selected_cannot_complete_as_svg_only(self):
+        self.ready(); pp.export_svg(self.job)
+        c.update(self.job, ppt_delivery='native-paths-v1')
+        with self.assertRaises(c.ClientError): pp.complete(self.job, visual_checked=True)
+
+    def test_ppt_failure_keeps_source_and_does_not_resubmit(self):
+        self.ready()
+        with patch.object(pp.subprocess,'run',return_value=subprocess.CompletedProcess([],1,'{"error":"PowerPoint unavailable"}','')):
+            with self.assertRaises(c.ClientError):pp.export_ppt(self.job)
+        self.assertEqual((self.job/'result.svg').read_bytes(),SVG)
+        self.assertEqual(len(self.api.submits),1)
+        self.assertNotEqual(c.read(self.job/'job.json')['state'],'delivered')
+        with self.assertRaises(c.ClientError):pp.complete(self.job,visual_checked=True)
+
+    def test_ppt_success_and_tamper_evidence(self):
+        self.ready()
+        def worker(command, **kwargs):
+            from svg_native_geometry import rectangle, write_pptx
+            out=Path(command[command.index('--output')+1]);out.mkdir()
+            source=Path(command[command.index('--svg')+1]);digest=c.sha(source.read_bytes())
+            pptx=out/'editable.pptx'
+            write_pptx([(rectangle(10,10,30,40),(1,0,0,1))],{'width_px':240,'height_px':120},pptx)
+            png=out/'preview.png';Image.new('RGB',(240,120),'white').save(png)
+            report=out/'report.json'
+            c.write(report,{'status':'review_required','source_sha256':digest,
+                'svg':{'status':'rendered','preview':str(png),'preview_sha256':c.sha(png.read_bytes())},
+                'powerpoint':{'status':'rendered','preview':str(png),'preview_sha256':c.sha(png.read_bytes()),'source':{'sha256':c.sha(pptx.read_bytes())}}})
+            record={'mode':'native-paths-v2','text_mode':'editable_text','outlined_text':False,'native_text_runs':0,'source_sha256':digest,'pptx':str(pptx),'pptx_sha256':c.sha(pptx.read_bytes()),
+                'preview':str(png),'preview_sha256':c.sha(png.read_bytes()),'report':str(report),'report_sha256':c.sha(report.read_bytes()),'comparison_page':str(out/'index.html')}
+            c.write(out/'native.json',record)
+            return subprocess.CompletedProcess(command,0,'{}','')
+        with patch.object(pp.subprocess,'run',side_effect=worker):
+            result=pp.export_ppt(self.job)
+        with self.assertRaises(c.ClientError):pp.complete(self.job,visual_checked=False)
+        self.assertEqual(pp.complete(self.job,visual_checked=True)['pptx'],result['pptx'])
+        self.assertEqual(len(self.api.submits),1)
+        original=Path(result['pptx']).read_bytes()
+        Path(result['pptx']).write_bytes(original+b'tampered')
+        with self.assertRaises(c.ClientError):pp.complete(self.job,visual_checked=True)
+        Path(result['pptx']).write_bytes(original)
+        pp.export_svg(self.job,font_family='Calibri')
+        with self.assertRaises(c.ClientError):pp.complete(self.job,visual_checked=True)
 
     def test_legacy_ppt_returns_svg_without_desktop_or_resubmission(self):
         self.ready()
@@ -293,14 +340,37 @@ class ClientTests(unittest.TestCase):
         c.update(self.job, application='ai')
         with self.assertRaises(c.ClientError):
             pp.complete(self.job, visual_checked=True)
-        receipt = subprocess.CompletedProcess([], 0, json.dumps({'opened':True, 'path':result['svg'], 'reused':False}), '')
-        with patch.object(pp.subprocess, 'run', return_value=receipt) as run:
+        def saved_artwork(command, **kwargs):
+            output=Path(command[command.index('--output')+1]);output.mkdir(parents=True)
+            receipt={'mode':'illustrator-native-v1','opened':True,'svg_sha256':c.sha(Path(result['svg']).read_bytes()),
+                     'text_mode':'editable_text','hashes':{}}
+            files={'ai':'editable.ai','preview':'ai.png','reference_preview':'svg.png','audit':'audit.json',
+                   'report':'report.json','comparison_page':'index.html','path':'source.svg'}
+            for key,name in files.items():
+                file=output/name;file.write_bytes(b'%PDF-1.7 fake' if key=='ai' else b'evidence')
+                if key=='audit':
+                    c.write(file,dict(saved_and_reopened=True,text_content_matches=True,aspect_ratio_matches=True,
+                                      raster_items=0,placed_items=0))
+                receipt[key]=str(file);receipt['hashes'][key]=c.sha(file.read_bytes())
+            return subprocess.CompletedProcess(command,0,json.dumps(receipt),'')
+        with patch.object(pp.subprocess, 'run', side_effect=saved_artwork) as run:
             if os.name == 'nt':
                 imported = pp.import_illustrator(self.job)
                 self.assertTrue(imported['opened'])
-                self.assertIn('import_illustrator.ps1', ' '.join(run.call_args.args[0]))
-                pp.complete(self.job, visual_checked=True)
+                self.assertIn('illustrator_native.py', ' '.join(run.call_args.args[0]))
+                delivered=pp.complete(self.job, visual_checked=True)
+                self.assertEqual(delivered['ai'],imported['ai'])
                 self.assertEqual(c.read(self.job/'job.json')['state'], 'delivered')
+                for key in ('ai','preview','audit','report','comparison_page'):
+                    file=Path(imported[key]);original=file.read_bytes();file.write_bytes(original+b'changed')
+                    with self.assertRaises(c.ClientError):pp.complete(self.job,visual_checked=True)
+                    file.write_bytes(original)
+                self.assertEqual(len(self.api.submits),1)
+
+    def test_legacy_adobe_open_receipt_is_not_saved_ai_delivery(self):
+        self.ready();c.update(self.job,application='ai');result=pp.export_svg(self.job)
+        c.write(self.job/'illustrator-import.json',{'opened':True,'svg_sha256':c.sha(Path(result['svg']).read_bytes())})
+        with self.assertRaises(c.ClientError):pp.complete(self.job,visual_checked=True)
 
     def test_import_failure_keeps_svg_and_does_not_mark_delivered(self):
         self.ready(); c.update(self.job, application='ai')

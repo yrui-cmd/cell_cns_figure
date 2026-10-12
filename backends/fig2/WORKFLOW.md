@@ -1,16 +1,16 @@
 # cell_cns_fig2
 
 开场和结尾必须显示合并入口 `SKILL.md` 的固定提示；本分支的简短显示规则不省略这两处提示。
-文字 / 图片 / 图文 → Figure Pro 固定接口 → 独立 Python 等待 → SVG 返回 → 原聊天继续 → 可编辑SVG / 按需导入Adobe Illustrator。
+文字 / 图片 / 图文 → Figure Pro 固定接口 → 独立 Python 等待 → SVG 返回 → 原聊天继续 → 可编辑SVG / 识别路径PPTX / 按需导入Adobe Illustrator。
 
 ## 输入与显示
 
 - 文字、单张真实PNG/JPG图片或图文均可，图片最大10 MiB，文字最多500000字符。两者皆无只问“请提供文字或图片。”不提交、不扣费。PDF先按用户选定页转成图片。只有图片时不强制索要文字；只有文字时不要求补图，服务端由cell_gra_pro1执行素材采集与绘图流程，不在客户端额外生图或收费。保留客户原文，不扩写科研内容。
-- 默认直接返回可编辑SVG（application=svg）。用户选择导入Adobe Illustrator时使用application=ai；只有这种明确选择才打开Illustrator，不要求预先新建文档。
+- 展示方式未指定时按入口询问一次；用户选择SVG或默认时返回可编辑SVG（application=svg）。用户选择导入Adobe Illustrator时使用application=ai；只有这种明确选择才打开Illustrator，不要求预先新建文档。要求PPT时使用application=ppt，返回识别路径PPTX和SVG。
 - 每个新任务成功接收一次扣45额度；轮询、下载、SVG交付和导入不再次收费。提交前查询真实可用额度；已经明确授权本图45额度时不重复确认，否则只问“本次45额度，继续吗？”
 - 接口写死在脚本中，没有地址配置或切换入口。只使用客户 API Key，不能使用后台接单或管理员密钥。
 - 面向用户精简显示：缺少输入、费用确认、提交成功、检查SVG、最终文件。任务ID、端点、路径协议、哈希、轮询日志和JSON留在后台；不要显示接口地址和密钥。
-- 接收可编辑SVG后直接交付，按用户选择导入Illustrator。不执行图像识别、去字、去水印、原生对象重绘或额外付费接口。
+- 接收可编辑SVG后按已保存选择交付SVG、生成识别路径PPTX或导入Illustrator。不执行图像识别、去字、去水印、原生对象重绘或额外付费接口。
 
 ## 提交并结束当前轮
 
@@ -18,7 +18,7 @@
 
 1. 保存已有图片；文字有则写UTF-8文件。给任务选择独立目录，记录当前真实`CODEX_THREAD_ID`，禁止猜聊天ID、另建聊天或发到姐妹聊天。
 2. 核对选择与45额度授权，运行`client.py probe`确认桌面原聊天可达。先执行`discover-key`本地检测已有 API Key，再用`balance`查看实时余额。已有配置直接复用，只有明确未找到时才问“请提供小描 API Key。”；用户可在聊天提供，通过stdin交给`configure-key`，不复述或写到命令行。凭据只存当前Windows用户DPAPI密文；本机已有客户凭据可直接使用，不替换账号。
-3. 新订单先取得一次性邀请码并说明“使用一次即失效，余额不足也失效；成功接单仍扣45额度”。已提供码则不再索要。执行`submit [--image ...] [--text-file ...] --application svg|ai --job-dir ... --credits-approved 45 --authorize-wake --invite-stdin`；纯文字省略`--image`，纯图片省略`--text-file`，至少有一个有效输入。通过进程标准输入传入一行邀请码，不把码写进命令参数、脚本文件或日志。调用者传入当前真实thread-id。启用本Skill处理该任务包含用户要求的“结果返回后通知原聊天继续处理”授权；不得扩大到别的聊天。
+3. 新订单先取得一次性邀请码并说明“使用一次即失效，余额不足也失效；成功接单仍扣45额度”。已提供码则不再索要。执行`submit [--image ...] [--text-file ...] --application svg|ai|ppt --job-dir ... --credits-approved 45 --authorize-wake --invite-stdin`；纯文字省略`--image`，纯图片省略`--text-file`，至少有一个有效输入。通过进程标准输入传入一行邀请码，不把码写进命令参数、脚本文件或日志。调用者传入当前真实thread-id。启用本Skill处理该任务包含用户要求的“结果返回后通知原聊天继续处理”授权；不得扩大到别的聊天。
 4. 脚本持久化输入与请求ID，注册登录/崩溃恢复，提交后自动启动独立Python等待进程。确认返回`charged_credits=45`且`background_waiter_verified=true`；再告知“已提交，结果返回后自动继续。”并结束本轮。
 提交后脚本自动在原聊天右侧创建并打开本地进度面板，返回`progress_opened=true`；无需模型另行打开。面板按1小时预估自动推进，结果未保存校验前最多99%；接收器已保存并校验SVG才到100%。等待期间结束模型轮次，让后台Python继续；不要为更新进度反复调用模型、发送聊天消息或轮询网站。面板未启动时仅运行`client.py progress --job-dir <原目录>`恢复，不重新提交订单。
 
@@ -31,9 +31,9 @@
 1. 先读回执中的原任务目录与job.json，核对当前聊天就是记录的原聊天。执行`client.py acknowledge --job-dir ... --nonce ...`确认接收；不会再次发送订单。
 2. 结果未通过SVG校验或回执是需要处理的状态时，报告实际原因并保留原任务，不把错误当完成，不重新收费。共享资源暂时占用时等待后继续。
 3. SVG有效时执行 `client.py export --job-dir ...`，保留原件并生成可直接打开的SVG交付副本。详见 [SVG交付与导入](references/postprocess.md)。
-4. 查看SVG实际预览，检查位置、比例、裁剪、箭头和文字；保留原图中的可编辑路径与效果，不执行PPTX转换或逐路径重绘。
+4. 查看SVG实际预览，检查位置、比例、裁剪、箭头和文字；保留原图中的可编辑路径与效果，PPT选择时用 `export-ppt --job-dir ...` 计算原生路径并检查实际PowerPoint预览；不把整张SVG嵌入PPT冒充逐个可编辑。
 5. 仅用户选定Adobe Illustrator导入（application=ai）时执行 `client.py import-illustrator --job-dir ...`；打开SVG独立文档，不修改已有文档。无法导入时提供SVG和实际原因，保留任务供恢复，不重新收费。
-6. 导入后查看命令返回的实际Illustrator预览；验收完成且用户要求的导入已成功时执行 `client.py complete --job-dir ... --visual-checked`。最终返回SVG链接，并追加入口规定的结尾提示。
+6. 导入后查看命令返回的实际Illustrator预览；验收完成且用户要求的导入已成功时执行 `client.py complete --job-dir ... --visual-checked`。最终返回所选文件链接；PPT同时附SVG，并追加入口规定的结尾提示。
 
 ## 恢复边界
 
@@ -54,3 +54,5 @@
 返回402时明确告知“余额不足，本次邀请码已失效，未扣费、未创建任务”；不要自动循环提交或自动换码。待用户提供新码并授权继续后，在原目录补码恢复。仅查询余额、等待、下载或交付不消耗邀请码。
 
 邀请码自生成时起24小时过期，以服务器时间为准；过期后不能提交，须取得新码。重新查询或重复签发旧码不会延长有效期。已受理订单的等待、接收和交付不受邀请码到期影响。
+
+选择Adobe Illustrator时，import-illustrator会另存原生AI并重新打开检查，文字保持可编辑；查看实际对照预览，再complete并返回AI与SVG。仅打开SVG的旧回执不作为AI交付完成。

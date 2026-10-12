@@ -2,6 +2,7 @@
 import json
 import os
 import subprocess
+import sys
 import uuid
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -76,8 +77,76 @@ def export_svg(directory, *, font_family=None):
 
 
 def convert(directory, *, file_only=False, font_family=None):
-    """Compatibility for old callbacks; now exports SVG without desktop conversion."""
+    """New PPT selections use bundled native paths; old callbacks keep SVG delivery."""
+    state, _, _ = verified_source(directory)
+    if state.get('ppt_delivery') in ('native-paths-v1','native-paths-v2'):
+        return export_ppt(directory, font_family=font_family)
     return export_svg(directory, font_family=font_family)
+
+
+def export_ppt(directory, *, font_family=None, illustrator=False):
+    directory = Path(directory).resolve()
+    export_svg(directory, font_family=font_family)
+    with c.Lock(directory/'conversion.lock'):
+        state, receipt = verified_output(directory)
+        # Record the selected output before conversion so failure cannot complete as SVG-only.
+        c.update(directory, ppt_delivery='native-paths-v2', conversion='ppt_converting')
+        destination = directory/'deliverables'/('ppt-'+uuid.uuid4().hex[:12])
+        command = [sys.executable, '-X', 'utf8', str(Path(__file__).with_name('powerpoint_native.py')),
+                   '--svg', receipt['svg'], '--output', str(destination)]
+        if illustrator: command.append('--illustrator')
+        try:
+            process = subprocess.run(command, capture_output=True, text=True, encoding='utf-8',
+                                     errors='replace', timeout=300,
+                                     creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            c.update(directory, conversion='ppt_failed', last_error='Native PPT conversion interrupted; SVG retained')
+            raise c.ClientError('Native PPT conversion interrupted; SVG retained. Retry the same task') from exc
+        if process.returncode:
+            c.update(directory, conversion='ppt_failed', last_error='Native PPT or actual display check failed; SVG retained')
+            try: message=json.loads(process.stdout.strip()).get('error','Conversion failed')
+            except ValueError: message='Native PPT conversion failed'
+            raise c.ClientError(str(message)[:800]+'; original SVG retained; no new order needed')
+        record = destination/'native.json'
+        if not record.is_file(): raise c.ClientError('Native PPT receipt missing')
+        native = c.read(record)
+        c.write(directory/'ppt-output.json', {**native, 'svg_sha256':receipt['sha256']})
+        native = verified_ppt(directory, receipt)
+        result = {key:native[key] for key in ('pptx','preview','comparison_page')}
+        result.update(svg=receipt['svg'], original_svg=receipt['original_svg'], text_mode='editable_text')
+        c.update(directory, conversion='ppt_review_required', deliverables=result, last_error=None)
+        return result
+
+
+def verified_ppt(directory, svg_receipt):
+    directory = Path(directory).resolve()
+    path = directory/'ppt-output.json'
+    if not path.is_file(): raise c.ClientError('Export and review editable PPTX before completing')
+    receipt = c.read(path)
+    if receipt.get('mode') != 'native-paths-v2' or receipt.get('svg_sha256') != svg_receipt['sha256'] or receipt.get('source_sha256') != svg_receipt['sha256']:
+        raise c.ClientError('PPTX receipt does not match the current SVG')
+    for key in ('pptx','preview','report'):
+        file = Path(receipt.get(key, '')).resolve()
+        if directory/'deliverables' not in file.parents or not file.is_file() or c.sha(file.read_bytes()) != receipt.get(key+'_sha256'):
+            raise c.ClientError('PPTX display evidence changed or is missing: '+key)
+    from display_check import inspect_pptx
+    audit=inspect_pptx(receipt['pptx'])
+    if receipt.get('text_mode') != 'editable_text' or receipt.get('outlined_text') is not False or receipt.get('native_text_runs') != audit['counts_by_type']['17']:
+        raise c.ClientError('PPTX must preserve text as editable text boxes; rebuild this older output')
+    if not (audit['native_freeforms'] or audit['counts_by_type']['17']) or audit['svg_graphics'] or audit['raster_pictures']:
+        raise c.ClientError('PPTX is not a native editable-path document')
+    report=c.read(receipt['report'])
+    if report.get('status') != 'review_required' or report.get('source_sha256') != svg_receipt['sha256']:
+        raise c.ClientError('Actual display checks are incomplete or stale')
+    if report.get('powerpoint',{}).get('source',{}).get('sha256') != receipt['pptx_sha256']:
+        raise c.ClientError('PowerPoint preview belongs to a different PPTX')
+    for key in ('svg','powerpoint','illustrator'):
+        evidence=report.get(key,{})
+        if evidence.get('status')=='rendered':
+            file=Path(evidence.get('preview','')).resolve()
+            if directory/'deliverables' not in file.parents or not file.is_file() or c.sha(file.read_bytes()) != evidence.get('preview_sha256'):
+                raise c.ClientError('Display preview changed since validation: '+key)
+    return receipt
 
 
 def verified_output(directory):
@@ -107,43 +176,44 @@ def import_illustrator(directory):
             raise c.ClientError('Illustrator import was not selected for this task')
         if os.name != 'nt':
             raise c.ClientError('Automatic Illustrator import requires Windows; the SVG is ready')
-        from illustrator_svg import expand
-        try:
-            data, marker_count = expand(Path(receipt['svg']).read_bytes())
-        except (ValueError, KeyError, TypeError) as exc:
-            raise c.ClientError('Illustrator marker preparation failed; original SVG is preserved: ' + str(exc)) from exc
-        c.validate_svg(data)
-        imported_svg = Path(receipt['svg'])
-        if marker_count:
-            imported_svg = directory/'deliverables'/('illustrator-' + c.sha(data)[:12] + '.svg')
-            if not imported_svg.is_file() or imported_svg.read_bytes() != data:
-                temp = imported_svg.with_name(imported_svg.name+'.'+uuid.uuid4().hex+'.tmp')
-                try:
-                    with temp.open('xb') as f:
-                        f.write(data); f.flush(); os.fsync(f.fileno())
-                    os.replace(temp, imported_svg)
-                finally:
-                    temp.unlink(missing_ok=True)
-        script = Path(__file__).with_name('import_illustrator.ps1')
+        output = directory/'deliverables'/('ai-' + uuid.uuid4().hex[:12])
+        script = Path(__file__).with_name('illustrator_native.py')
         try:
             process = subprocess.run(
-                ['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-                 '-File', str(script), '-SvgPath', str(imported_svg)],
-                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120,
+                [sys.executable, '-X', 'utf8', str(script), '--svg', receipt['svg'], '--output', str(output)],
+                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=240,
                 creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         except (OSError, subprocess.TimeoutExpired) as exc:
-            raise c.ClientError('Illustrator import could not be confirmed; SVG is preserved, retry the same task') from exc
+            raise c.ClientError('Illustrator save could not be confirmed; SVG is preserved, retry the same task') from exc
         if process.returncode:
-            raise c.ClientError('Illustrator import failed; open Illustrator and retry the same task. SVG is preserved')
+            raise c.ClientError('Illustrator conversion failed; SVG is preserved: ' + process.stderr[-1500:])
         try:
             result = json.loads(process.stdout.strip())
         except ValueError:
-            raise c.ClientError('Illustrator import could not be confirmed; SVG is preserved') from None
-        if not result.get('opened') or Path(result.get('path', '')).resolve() != imported_svg.resolve():
-            raise c.ClientError('Illustrator import receipt mismatch')
-        result['expanded_markers'] = marker_count
-        c.write(directory/'illustrator-import.json', {**result, 'svg_sha256': receipt['sha256'], 'import_sha256': c.sha(data)})
-        return {**result, 'svg': receipt['svg']}
+            raise c.ClientError('Illustrator save receipt missing; SVG is preserved') from None
+        c.write(directory/'illustrator-import.json', result)
+        return verified_illustrator(directory, receipt)
+
+
+def verified_illustrator(directory, receipt):
+    imported = directory/'illustrator-import.json'
+    if not imported.is_file():
+        raise c.ClientError('Import and save this SVG in Illustrator before delivery')
+    result = c.read(imported)
+    if (result.get('mode') != 'illustrator-native-v1' or not result.get('opened') or
+            result.get('svg_sha256') != receipt['sha256'] or result.get('text_mode') != 'editable_text'):
+        raise c.ClientError('Save the current SVG as native AI with editable text before delivery')
+    for key in ('ai','preview','reference_preview','audit','report','comparison_page','path'):
+        path = Path(result.get(key,''))
+        if (not path.is_file() or not path.resolve().is_relative_to(directory/'deliverables') or
+                c.sha(path.read_bytes()) != result.get('hashes',{}).get(key)):
+            raise c.ClientError('Illustrator output or visual evidence changed: ' + key)
+    audit = c.read(result['audit'])
+    if not all(audit.get(k) for k in ('saved_and_reopened','text_content_matches','aspect_ratio_matches')):
+        raise c.ClientError('Illustrator text/canvas verification incomplete')
+    if audit.get('raster_items') or audit.get('placed_items'):
+        raise c.ClientError('Illustrator delivery is not fully native artwork')
+    return result
 
 
 def complete(directory, *, visual_checked):
@@ -152,11 +222,12 @@ def complete(directory, *, visual_checked):
         state, receipt = verified_output(directory)
         if not visual_checked:
             raise c.ClientError('Actual SVG visual verification required')
-        if state.get('application') == 'ai':
-            imported = directory/'illustrator-import.json'
-            if not imported.is_file() or c.read(imported).get('svg_sha256') != receipt['sha256']:
-                raise c.ClientError('Import this SVG into Illustrator before completing the selected delivery')
+        native = verified_ppt(directory, receipt) if state.get('ppt_delivery') in ('native-paths-v1','native-paths-v2') else None
+        adobe = verified_illustrator(directory, receipt) if state.get('application') == 'ai' else None
         updated = c.update(directory, state='delivered', conversion='complete', visual_checked=True)
         if updated['state'] != 'delivered':
             raise c.ClientError('Task stopped before delivery')
-        return {key: receipt[key] for key in ('svg', 'original_svg')}
+        result = {key: receipt[key] for key in ('svg', 'original_svg')}
+        if native: result.update({key:native[key] for key in ('pptx','preview','comparison_page')})
+        if adobe: result.update({key:adobe[key] for key in ('ai','preview','comparison_page')})
+        return result
