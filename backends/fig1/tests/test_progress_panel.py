@@ -64,10 +64,12 @@ class ProgressTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 bridge.call('tools/call',dict(namespace='codex_app',tool='open_in_codex',threadId=thread,arguments=args))
 
-    def test_estimate_caps_at_99_even_after_an_hour(self):
+    def test_three_hour_estimate_caps_at_99(self):
         self.assertEqual(p.snapshot(self.root,now=1000)['percent'],0)
-        self.assertEqual(p.snapshot(self.root,now=2800)['percent'],50)
-        self.assertEqual(p.snapshot(self.root,now=4600)['percent'],99)
+        self.assertEqual(p.snapshot(self.root,now=4600)['percent'],33)
+        self.assertEqual(p.snapshot(self.root,now=6400)['percent'],50)
+        self.assertEqual(p.snapshot(self.root,now=11800)['percent'],99)
+        self.assertEqual(p.snapshot(self.root,now=1000)['estimate'],10800)
         self.assertEqual(p.snapshot(self.root,now=90000)['percent'],99)
 
     def test_remote_completion_without_local_file_is_not_100(self):

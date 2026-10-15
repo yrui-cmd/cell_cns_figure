@@ -11,7 +11,7 @@ import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-ESTIMATE = 3600
+ESTIMATE = 3 * 3600
 
 
 def snapshot(directory, now=None):
