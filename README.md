@@ -23,15 +23,4 @@
 
 邮箱：[a2417220276@gmail.com](mailto:a2417220276@gmail.com)。添加好友时请备注 **Cell 使用交流**。
 
-<table>
-  <tr>
-    <td align="center"><strong>微信：木纹</strong></td>
-    <td align="center"><strong>小红书：木纹小路</strong></td>
-    <td align="center"><strong>抖音：木纹</strong></td>
-  </tr>
-  <tr>
-    <td><img src="assets/wechat.jpg" width="220" alt="微信木纹二维码"></td>
-    <td><img src="assets/xiaohongshu.jpg" width="220" alt="小红书木纹小路主页"></td>
-    <td><img src="assets/douyin.jpg" width="220" alt="抖音木纹主页"></td>
-  </tr>
-</table>
+抖音账号为 **cell_skills(抖音)**。
